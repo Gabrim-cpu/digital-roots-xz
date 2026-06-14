@@ -2,15 +2,22 @@
 export default {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,営業,jsx}",
+    "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
       colors: {
-        // High-contrast, accessible palettes friendly for elderly vision profiles
-        rootPrimary: "#1b4332",   // Deep, comforting cultural green
-        rootSecondary: "#d8f3dc", // Soft light background contrast
-        rootAccent: "#ffb703"    // High-visibility gold for alerts/buttons
+        brand: {
+          burgundy: '#740A03',
+          roseMuted: '#A77272',
+          bgLight: '#FBF9F6',
+          bgCard: '#FFFFFF',
+          darkText: '#2B2323',
+        }
+      },
+      fontFamily: {
+        serif: ['Georgia', 'serif'],
+        sans: ['Poppins', 'sans-serif'],
       }
     },
   },
