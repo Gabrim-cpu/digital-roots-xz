@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: xz_postgres
+    environment:
+      POSTGRES_USER: xz_user
+      POSTGRES_PASSWORD: xz_password_123
+      POSTGRES_DB: xz_database
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xz_user -d xz_database"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+volumes:
+  postgres_data:

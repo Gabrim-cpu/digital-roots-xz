@@ -13,8 +13,11 @@ import {
   X, 
   Check 
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
+  const { appUser, signOut } = useAuth();
+  
   // Mobile Sidebar Toggle State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
@@ -34,6 +37,8 @@ export default function Dashboard() {
     { name: 'Mentorship', icon: Award },
     { name: 'Settings', icon: Settings },
   ];
+
+  const displayName = appUser?.display_name || appUser?.email?.split('@')[0] || 'User';
 
   return (
     <div className="min-h-screen bg-white flex relative" style={{ fontFamily: '"Montserrat", sans-serif' }}>
@@ -143,7 +148,7 @@ export default function Dashboard() {
         {/* Welcome Block */}
         <div>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-gray-900" style={{ fontFamily: '"Poppins", sans-serif' }}>
-            Welcome back, Elvis
+            Welcome back, {displayName}
           </h2>
           <p className="text-gray-400 italic text-xs sm:text-sm mt-1">
             "Wisdom is the reward you get for a lifetime of listening."

@@ -1,68 +1,112 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import LiveCall from './components/LiveCall';
 import RecordingSession from './components/RecordingSession';
+import Register from './pages/Register';
+import Onboarding from './pages/Onboarding';
 
-// Importe ton logo ici (ajuste le chemin selon ton projet)
-// import Logo from './assets/logo.png'; 
+function ProtectedRoute({ children, skipOnboardingCheck = false }) {
+  const { isAuthenticated, loading, appUser } = useAuth();
 
-export default function App() {
-  const [currentView, setCurrentView] = useState('login');
-  // 1. Nouvel état pour gérer l'affichage du Splash Screen
-  const [isLoading, setIsLoading] = useState(true);
-
-  // 2. Effet pour faire disparaître le Splash Screen après un délai
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 3000); // 3000 ms = 3 secondes (tu peux changer cette valeur)
-
-    return () => clearTimeout(timer); // Nettoyage du timer
-  }, []);
-
-  // 3. Si on est en train de charger, on affiche UNIQUEMENT le Splash Screen
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="fixed inset-0 bg-neutral-950 flex flex-col items-center justify-center z-50">
-        {/* Conteneur Logo + Animation */}
-        <div className="flex flex-col items-center gap-6 animate-fade-in">
-          
-          {/* Emplacement de ton Logo */}
-          <div className="w-24 h-24 bg-amber-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-amber-600/20">
-            {/* Remplace ce texte par <img src={Logo} alt="Logo" /> une fois importé */}
-            App
-          </div>
-
-          {/* Le Loader (Tu vois ce que je veux dire 😉 - Un beau spinner moderne) */}
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-8 h-8 border-4 border-amber-600/30 border-t-amber-600 rounded-full animate-spin"></div>
-            <p className="text-neutral-400 text-xs tracking-widest uppercase animate-pulse">
-              Chargement...
-            </p>
-          </div>
-
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">
+        Loading...
       </div>
     );
   }
 
-  // 4. Une fois le chargement fini (isLoading === false), le reste de l'application s'affiche normalement
-  return (
-    <div className="relative">
-      {/* Dev Switcher Bar */}
-      <div className="fixed bottom-4 left-4 z-50 bg-neutral-900/90 text-white p-2 rounded-xl text-xs flex gap-2 shadow-xl border border-white/10 backdrop-blur-sm">
-        <button onClick={() => setCurrentView('login')} className={`px-2.5 py-1 rounded-md ${currentView === 'login' ? 'bg-amber-600' : 'hover:bg-white/10'}`}>1. Login</button>
-        <button onClick={() => setCurrentView('dashboard')} className={`px-2.5 py-1 rounded-md ${currentView === 'dashboard' ? 'bg-amber-600' : 'hover:bg-white/10'}`}>2. Dashboard</button>
-        <button onClick={() => setCurrentView('call')} className={`px-2.5 py-1 rounded-md ${currentView === 'call' ? 'bg-amber-600' : 'hover:bg-white/10'}`}>3. Call UI</button>
-        <button onClick={() => setCurrentView('recording')} className={`px-2.5 py-1 rounded-md ${currentView === 'recording' ? 'bg-amber-600' : 'hover:bg-white/10'}`}>4. Recording</button>
-      </div>
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
 
-      {/* Dynamic Screen Render */}
-      {currentView === 'login' && <Login />}
-      {currentView === 'dashboard' && <Dashboard />}
-      {currentView === 'call' && <LiveCall />}
-      {currentView === 'recording' && <RecordingSession />}
-    </div>
+  if (!skipOnboardingCheck && appUser && !appUser.is_onboarded) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  return children;
+}
+
+function PublicOnlyRoute({ children }) {
+  const { isAuthenticated, loading, appUser } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">
+        Loading...
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    if (appUser && !appUser.is_onboarded) {
+      return <Navigate to="/onboarding" replace />;
+    }
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/login" replace />} />
+
+      <Route
+        path="/login"
+        element={
+          <PublicOnlyRoute>
+            <Login />
+          </PublicOnlyRoute>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <PublicOnlyRoute>
+            <Register />
+          </PublicOnlyRoute>
+        }
+      />
+
+      <Route
+        path="/onboarding"
+        element={
+          <ProtectedRoute skipOnboardingCheck>
+            <Onboarding />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/call"
+        element={
+          <ProtectedRoute>
+            <LiveCall />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/recording"
+        element={
+          <ProtectedRoute>
+            <RecordingSession />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
   );
 }

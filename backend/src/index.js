@@ -2,33 +2,33 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes.js';
+import { testConnection } from './config/database.js';
 
-// Load our system keys
 dotenv.config();
 
 const app = express();
 
-// Middlewares
-app.use(cors()); // Permits your frontend to talk to this backend
-app.use(express.json()); // Allows the backend to process input fields securely
+app.use(cors());
+app.use(express.json());
 
-// Mount your independent API routes
 app.use('/api/auth', authRoutes);
 
-// B-TECH Defense Health Check Route
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'online',
-    architecture: 'Hybrid Node.js + Firebase BaaS',
+    architecture: 'PostgreSQL + Firebase',
     project: 'Digital Roots (XZ)',
+    database: process.env.DB_NAME,
     timestamp: new Date()
   });
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+
+app.listen(PORT, async () => {
   console.log('======================================================');
-  console.log(` 🚀 XZ Node.js Core Backend executing on port ${PORT}`);
-  console.log(` 📂 Connected to Firebase Project: xz-bridging-generational-aac96`);
+  console.log(`🚀 XZ Node.js Core Backend executing on port ${PORT}`);
+  console.log(`📂 Connected to Firebase Project: ${process.env.FIREBASE_PROJECT_ID || 'not configured'}`);
   console.log('======================================================');
+  await testConnection();
 });
