@@ -14,6 +14,7 @@ import {
   Check 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import logo from '../Assets/logo XZ.png';
 
 export default function Dashboard() {
   const { appUser, signOut } = useAuth();
@@ -45,9 +46,12 @@ export default function Dashboard() {
       
       {/* Mobile Header Top-Bar (Only displays on small screens) */}
       <div className="md:hidden w-full bg-white border-b border-gray-200 p-4 flex justify-between items-center fixed top-0 left-0 z-30">
-        <div>
-          <h1 className="text-lg font-bold tracking-wide text-red-900" style={{ fontFamily: '"Poppins", sans-serif' }}>WISDOM HUB</h1>
-          <p className="text-[9px] uppercase tracking-wider text-gray-400">Bridging Generations</p>
+        <div className="flex items-center gap-3">
+          <img src={logo} alt="XZ logo" className="w-10 h-auto" />
+          <div>
+            <h1 className="text-lg font-bold tracking-wide text-red-900" style={{ fontFamily: '"Poppins", sans-serif' }}>WISDOM HUB</h1>
+            <p className="text-[9px] uppercase tracking-wider text-gray-400">Bridging Generations</p>
+          </div>
         </div>
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -66,9 +70,12 @@ export default function Dashboard() {
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="space-y-8">
-          <div className="hidden md:block">
-            <h1 className="text-xl font-bold tracking-wide text-red-900" style={{ fontFamily: '"Poppins", sans-serif' }}>WISDOM HUB</h1>
-            <p className="text-[10px] uppercase tracking-wider text-gray-400">Bridging Generations</p>
+          <div className="hidden md:flex items-center gap-3">
+            <img src={logo} alt="XZ logo" className="w-12 h-auto" />
+            <div>
+              <h1 className="text-xl font-bold tracking-wide text-red-900" style={{ fontFamily: '"Poppins", sans-serif' }}>WISDOM HUB</h1>
+              <p className="text-[10px] uppercase tracking-wider text-gray-400">Bridging Generations</p>
+            </div>
           </div>
 
           <nav className="space-y-1">

@@ -53,7 +53,30 @@ export async function loginUser(email, password) {
 
 export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
-  const credential = await signInWithPopup(auth, provider);
+  // Encourage account selection when multiple accounts are present
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  let credential;
+  try {
+    credential = await signInWithPopup(auth, provider);
+  } catch (err) {
+    // Fallback to redirect flow for environments where popups are blocked (mobile browsers, strict blockers)
+    // Re-throw non-auth errors so caller can handle/display them
+    const code = err && err.code ? err.code : null;
+    if (code && (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request' || code === 'auth/popup-closed-by-user')) {
+      // Try redirect fallback
+      try {
+        await import('firebase/auth').then(({ signInWithRedirect }) => signInWithRedirect(auth, provider));
+        // When using redirect, the app will continue in onAuthStateChanged after redirect completes
+        return null;
+      } catch (redirectErr) {
+        throw redirectErr;
+      }
+    }
+
+    throw err;
+  }
+
   const user = credential.user;
 
   // Check if user exists in Firestore, if not create profile
@@ -63,8 +86,8 @@ export async function signInWithGoogle() {
   if (!snapshot.exists()) {
     await setDoc(userRef, {
       uid: user.uid,
-      name: user.displayName || user.email.split('@')[0],
-      email: user.email,
+      name: user.displayName || (user.email ? user.email.split('@')[0] : 'User'),
+      email: user.email || null,
       role: 'Senior', // Default role for Google sign-in
       language: 'en',
       avatar: user.photoURL || null,

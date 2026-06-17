@@ -11,7 +11,7 @@ build/
 .env.test.local
 .env.production.local
 backend/firebase-key.json
-firebase-key.json
+firebase-key.json/
 
 # 3. System Logs & Editor Settings
 npm-debug.log*

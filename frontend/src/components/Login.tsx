@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { BookOpen, Users, Eye, EyeOff, ArrowRight, Shield, Download } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { signInWithGoogle, syncSession } from '../services/authService';
+import logo from '../Assets/logo XZ.png';
 
 // ============================================
 // TYPES & INTERFACES
@@ -192,6 +193,8 @@ export default function Login({
 
     try {
       const user = await signInWithGoogle();
+      // If signInWithGoogle returned null it initiated a redirect flow; wait for onAuthStateChanged
+      if (!user) return;
       const idToken = await user.getIdToken();
       const session = await syncSession(idToken, {
         identity: identity,
@@ -221,7 +224,9 @@ export default function Login({
       {/* Left Branding Panel */}
       <div className="md:col-span-5 bg-brand-burgundy p-6 md:p-12 flex flex-col justify-between text-white relative overflow-hidden">
         <div className="flex justify-between items-start">
-          <div className="text-2xl font-serif tracking-wide">XZ</div>
+            <div className="flex items-center gap-2">
+              <img src={logo} alt="XZ logo" className="w-16 h-auto object-contain" />
+            </div>
           {/* Language selector - satisfies FR-12 (Local language tagging) */}
           <div className="relative">
             <select
