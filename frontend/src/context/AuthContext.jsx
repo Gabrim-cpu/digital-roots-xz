@@ -1,27 +1,75 @@
-import { auth, db } from "../firebaseConfig";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../config/firebase';
+import { loginUser, registerUser, signOutUser, syncSession } from '../services/authService';
 
-export const signUpUser = async (email, password, fullName, role, languages) => {
-  try {
-    // 1. Create the user inside Firebase Authentication safety center
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
+const AuthContext = createContext(null);
 
-    // 2. Create a matching user profile document inside Cloud Firestore database
-    await setDoc(doc(db, "users", user.uid), {
-      uid: user.uid,
-      name: fullName,
-      email: email,
-      role: role, // 'elder' or 'youth'
-      languages: languages || ['English', 'French'],
-      rootPointsBalance: 0, // Base gamification start state
-      createdAt: new Date()
+export function AuthProvider({ children }) {
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [appUser, setAppUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setFirebaseUser(user);
+
+      if (user) {
+        try {
+          const idToken = await user.getIdToken();
+          const session = await syncSession(idToken);
+          setAppUser(session.user);
+        } catch {
+          setAppUser(null);
+        }
+      } else {
+        setAppUser(null);
+      }
+
+      setLoading(false);
     });
 
-    return { success: true, user };
-  } catch (error) {
-    console.error("Firebase Auth Error:", error.message);
-    return { success: false, error: error.message };
+    return unsubscribe;
+  }, []);
+
+  const signIn = useCallback(async (email, password, { identity, language } = {}) => {
+    const { user } = await loginUser(email, password);
+    const idToken = await user.getIdToken();
+    const session = await syncSession(idToken, { identity, language });
+    setAppUser(session.user);
+    return session;
+  }, []);
+
+  const signUp = useCallback(async ({ email, password, name, role, language }) => {
+    const user = await registerUser({ email, password, name, role, language });
+    const idToken = await user.getIdToken();
+    const session = await syncSession(idToken, { identity: role, language });
+    setAppUser(session.user);
+    return session;
+  }, []);
+
+  const signOut = useCallback(async () => {
+    await signOutUser();
+    setAppUser(null);
+  }, []);
+
+  const value = {
+    firebaseUser,
+    appUser,
+    loading,
+    signIn,
+    signUp,
+    signOut,
+    isAuthenticated: !!firebaseUser,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
   }
-};
+  return context;
+}

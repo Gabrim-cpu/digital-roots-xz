@@ -1,9 +1,11 @@
 import express from 'express';
-import { handleBackendSession } from '../controllers/authController.js';
+import { verifyFirebaseToken } from '../middleware/verifyFirebaseToken.js';
+import { handleAuth, getProfile, updateProfile } from '../controllers/authController.js';
 
 const router = express.Router();
 
-// Endpoint: http://localhost:5000/api/auth/session-verify
-router.post('/session-verify', handleBackendSession);
+router.post('/session', verifyFirebaseToken, handleAuth);
+router.get('/profile', verifyFirebaseToken, getProfile);
+router.put('/profile', verifyFirebaseToken, updateProfile);
 
 export default router;
