@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
       if (user) {
         try {
           const idToken = await user.getIdToken();
-          const session = await syncSession(idToken);
+          const session = await syncSession(idToken, { picture: user.photoURL });
           setAppUser(session.user);
         } catch {
           setAppUser(null);
@@ -40,10 +40,10 @@ export function AuthProvider({ children }) {
     return session;
   }, []);
 
-  const signUp = useCallback(async ({ email, password, name, role, language }) => {
-    const user = await registerUser({ email, password, name, role, language });
+  const signUp = useCallback(async ({ email, password, name, role, language, profilePicture }) => {
+    const user = await registerUser({ email, password, name, role, language, profilePicture });
     const idToken = await user.getIdToken();
-    const session = await syncSession(idToken, { identity: role, language });
+    const session = await syncSession(idToken, { identity: role, language, picture: profilePicture || user.photoURL });
     setAppUser(session.user);
     return session;
   }, []);

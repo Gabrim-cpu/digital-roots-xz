@@ -2,7 +2,8 @@ import { pool } from '../config/database.js';
 
 export const handleAuth = async (req, res) => {
   const { uid, email, name, picture } = req.firebaseUser;
-  const { identity, language } = req.body;
+  const { identity, language, picture: uploadedPicture } = req.body;
+  const avatarUrl = uploadedPicture || picture || null;
   
   try {
     let result = await pool.query(
@@ -19,15 +20,19 @@ export const handleAuth = async (req, res) => {
         `INSERT INTO users (firebase_uid, email, display_name, identity, language, avatar_url)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *`,
-        [uid, email, name || email.split('@')[0], identity || null, language || 'en', picture || null]
+        [uid, email, name || email.split('@')[0], identity || null, language || 'en', avatarUrl]
       );
       user = result.rows[0];
     } else {
       user = result.rows[0];
       await pool.query(
-        'UPDATE users SET last_seen_at = NOW() WHERE id = $1',
-        [user.id]
+        `UPDATE users
+         SET last_seen_at = NOW(),
+             avatar_url = COALESCE($1, avatar_url)
+         WHERE id = $2`,
+        [avatarUrl, user.id]
       );
+      user.avatar_url = avatarUrl || user.avatar_url;
     }
     
     res.json({
@@ -69,7 +74,7 @@ export const getProfile = async (req, res) => {
 };
 
 export const updateProfile = async (req, res) => {
-  const { identity, language, display_name } = req.body;
+  const { identity, language, display_name, avatar_url } = req.body;
   
   try {
     const result = await pool.query(
@@ -77,10 +82,11 @@ export const updateProfile = async (req, res) => {
        SET identity = COALESCE($1, identity),
            language = COALESCE($2, language),
            display_name = COALESCE($3, display_name),
+           avatar_url = COALESCE($4, avatar_url),
            is_onboarded = CASE WHEN $1 IS NOT NULL THEN true ELSE is_onboarded END
-       WHERE firebase_uid = $4 
+       WHERE firebase_uid = $5 
        RETURNING *`,
-      [identity, language, display_name, req.firebaseUser.uid]
+      [identity, language, display_name, avatar_url, req.firebaseUser.uid]
     );
     
     res.json({ success: true, user: result.rows[0] });

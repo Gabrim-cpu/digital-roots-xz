@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import ChatMessaging from './components/ChatMessaging';
 import LiveCall from './components/LiveCall';
 import RecordingSession from './components/RecordingSession';
 import Register from './pages/Register';
@@ -51,6 +52,29 @@ function PublicOnlyRoute({ children }) {
   return children;
 }
 
+function MessagesPage() {
+  const { appUser } = useAuth();
+  const identity = appUser?.identity || 'Senior';
+  const currentUser = {
+    id: appUser?.id || 'current-user',
+    name: appUser?.display_name || appUser?.email?.split('@')[0] || 'You',
+    email: appUser?.email || 'you@digitalroots.org',
+    role: identity === 'Senior' ? 'senior' : 'youth',
+    language: appUser?.language || 'en',
+    avatar: appUser?.avatar_url || null,
+    points: appUser?.root_points || 0,
+    interests: [],
+  };
+
+  return (
+    <ChatMessaging
+      currentUser={currentUser}
+      threads={[]}
+      messagesByThread={{}}
+    />
+  );
+}
+
 export default function App() {
   return (
     <Routes>
@@ -86,6 +110,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/messages"
+        element={
+          <ProtectedRoute>
+            <MessagesPage />
           </ProtectedRoute>
         }
       />

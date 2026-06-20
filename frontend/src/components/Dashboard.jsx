@@ -1,313 +1,340 @@
-import React, { useState } from 'react';
-import { 
-  Home, 
-  MessageSquare, 
-  Library, 
-  Award, 
-  Settings, 
-  Search, 
-  Bell, 
-  HelpCircle, 
-  Plus, 
-  Menu, 
-  X, 
-  Check 
+import React, { useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  Award,
+  Bell,
+  BookOpen,
+  Home,
+  Library,
+  Menu,
+  MessageCircle,
+  MessageSquare,
+  Mic2,
+  Plus,
+  Search,
+  Send,
+  Settings,
+  User,
+  Video,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import logo from '../Assets/logo XZ.png';
 
-export default function Dashboard() {
+const navItems = [
+  { name: 'Feed', icon: Home, path: '/dashboard' },
+  { name: 'Messages', icon: MessageSquare, path: '/messages' },
+  { name: 'Create', icon: Plus, path: '/recording', primary: true },
+  { name: 'Library', icon: Library, path: '/recording' },
+  { name: 'Live', icon: Video, path: '/call' },
+];
+
+export default function Dashboard({ feed = [], recommendations = [], pointsSummary }) {
   const { appUser, signOut } = useAuth();
-  
-  // Mobile Sidebar Toggle State
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
-  // Interactive States for Buttons/Actions
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [addedItems, setAddedItems] = useState({});
-  const [activeTab, setActiveTab] = useState('Home');
-
-  const handleToggleAdd = (id) => {
-    setAddedItems(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const navItems = [
-    { name: 'Home', icon: Home },
-    { name: 'Messages', icon: MessageSquare },
-    { name: 'WISDOM HUB', icon: Library },
-    { name: 'Mentorship', icon: Award },
-    { name: 'Settings', icon: Settings },
-  ];
+  const [composerText, setComposerText] = useState('');
+  const [localFeed, setLocalFeed] = useState(feed);
 
   const displayName = appUser?.display_name || appUser?.email?.split('@')[0] || 'User';
+  const avatarUrl = appUser?.avatar_url || null;
+  const initials = displayName.slice(0, 1).toUpperCase();
+
+  const filteredFeed = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const source = localFeed.length ? localFeed : feed;
+    if (!query) return source;
+    return source.filter((item) =>
+      [item.author_name, item.title, item.body, item.type].filter(Boolean).some((value) => value.toLowerCase().includes(query))
+    );
+  }, [feed, localFeed, searchQuery]);
+
+  const publishLocalPost = () => {
+    const body = composerText.trim();
+    if (!body) return;
+    setLocalFeed((prev) => [
+      {
+        id: `local-${Date.now()}`,
+        type: 'post',
+        author_name: displayName,
+        body,
+        created_at: new Date().toISOString(),
+        localOnly: true,
+      },
+      ...prev,
+    ]);
+    setComposerText('');
+  };
+
+  const navigateTo = (path) => {
+    setIsSidebarOpen(false);
+    navigate(path);
+  };
+
+  const ProfileAvatar = ({ size = 'h-10 w-10', interactive = true }) => {
+    const className = `${size} shrink-0 overflow-hidden rounded-full bg-brand-burgundy text-sm font-bold text-white ring-2 ring-white`;
+    const content = avatarUrl ? <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" /> : initials;
+    if (!interactive) {
+      return <div className={className}>{content}</div>;
+    }
+    return (
+      <button onClick={() => setIsProfileOpen(true)} className={className}>
+        {content}
+      </button>
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-white flex relative" style={{ fontFamily: '"Montserrat", sans-serif' }}>
-      
-      {/* Mobile Header Top-Bar (Only displays on small screens) */}
-      <div className="md:hidden w-full bg-white border-b border-gray-200 p-4 flex justify-between items-center fixed top-0 left-0 z-30">
-        <div className="flex items-center gap-3">
-          <img src={logo} alt="XZ logo" className="w-10 h-auto" />
-          <div>
-            <h1 className="text-lg font-bold tracking-wide text-red-900" style={{ fontFamily: '"Poppins", sans-serif' }}>WISDOM HUB</h1>
-            <p className="text-[9px] uppercase tracking-wider text-gray-400">Bridging Generations</p>
-          </div>
+    <div className="min-h-screen bg-[#F8F7F4] pb-20 text-stone-900 md:pb-0" style={{ fontFamily: '"Poppins", sans-serif' }}>
+      <header className="sticky top-0 z-40 border-b border-stone-200 bg-white/95 px-4 py-3 backdrop-blur md:hidden">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setIsSidebarOpen(true)} className="rounded-full p-2 hover:bg-stone-100" aria-label="Open menu">
+            <Menu className="h-5 w-5" />
+          </button>
+          <button onClick={() => navigateTo('/dashboard')} className="flex items-center gap-2">
+            <img src={logo} alt="Digital Roots" className="h-8 w-auto" />
+            <span className="text-sm font-bold text-brand-burgundy">Digital Roots</span>
+          </button>
+          <ProfileAvatar />
         </div>
-        <button 
-          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl focus:outline-none"
-          aria-label="Toggle Menu"
-        >
-          {isSidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
-      </div>
+      </header>
 
-      {/* Sidebar Navigation */}
-      <aside className={`
-        w-64 bg-white border-r border-gray-200/60 p-6 flex flex-col justify-between fixed h-full z-20 
-        transition-transform duration-300 ease-in-out
-        md:translate-x-0 pt-20 md:pt-6
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-        <div className="space-y-8">
-          <div className="hidden md:flex items-center gap-3">
-            <img src={logo} alt="XZ logo" className="w-12 h-auto" />
-            <div>
-              <h1 className="text-xl font-bold tracking-wide text-red-900" style={{ fontFamily: '"Poppins", sans-serif' }}>WISDOM HUB</h1>
-              <p className="text-[10px] uppercase tracking-wider text-gray-400">Bridging Generations</p>
-            </div>
+      <aside className={`fixed left-0 top-0 z-50 flex h-full w-72 flex-col justify-between border-r border-stone-200 bg-white p-5 transition-transform md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div>
+          <div className="flex items-center justify-between">
+            <button onClick={() => navigateTo('/dashboard')} className="flex items-center gap-3 text-left">
+              <img src={logo} alt="Digital Roots" className="h-11 w-auto" />
+              <div>
+                <h1 className="text-lg font-bold text-brand-burgundy">Digital Roots</h1>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-stone-400">Community PWA</p>
+              </div>
+            </button>
+            <button onClick={() => setIsSidebarOpen(false)} className="rounded-full p-2 hover:bg-stone-100 md:hidden" aria-label="Close menu">
+              <X className="h-5 w-5" />
+            </button>
           </div>
 
-          <nav className="space-y-1">
+          <button onClick={() => setIsProfileOpen(true)} className="mt-7 flex w-full items-center gap-3 rounded-3xl border border-stone-200 bg-[#FBF9F6] p-4 text-left">
+            <ProfileAvatar size="h-12 w-12" interactive={false} />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">{displayName}</p>
+              <p className="text-[11px] text-stone-500">{appUser?.identity || 'Community member'}</p>
+            </div>
+          </button>
+
+          <nav className="mt-7 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = activeTab === item.name;
+              const isActive = location.pathname === item.path && !item.primary;
               return (
                 <button
                   key={item.name}
-                  onClick={() => {
-                    setActiveTab(item.name);
-                    setIsSidebarOpen(false); // Close mobile drawer on select
-                  }}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-sm transition-all text-left ${
-                    isActive 
-                      ? 'bg-red-50 text-red-900 shadow-sm border border-red-100/50' 
-                      : 'text-gray-500 hover:bg-gray-100/60'
+                  onClick={() => navigateTo(item.path)}
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                    isActive ? 'bg-brand-burgundy text-white' : 'text-stone-500 hover:bg-stone-100 hover:text-stone-900'
                   }`}
                 >
-                  <Icon className="w-4 h-4"/> {item.name}
+                  <Icon className="h-4 w-4" />
+                  {item.name}
                 </button>
               );
             })}
           </nav>
         </div>
 
-        <button 
-          onClick={() => alert('Initiating a connection sequence...')}
-          className="w-full bg-red-900 text-white py-3 px-4 rounded-xl font-medium text-sm flex items-center justify-center gap-2 shadow-md hover:bg-red-950 transition-all mt-8"
-        >
-          <Plus className="w-4 h-4"/> New Connection
+        <button onClick={signOut} className="text-xs font-semibold text-stone-400 hover:text-brand-burgundy">
+          Sign out
         </button>
       </aside>
 
-      {/* Backdrop for Mobile Sidebar Overlay */}
-      {isSidebarOpen && (
-        <div 
-          onClick={() => setIsSidebarOpen(false)} 
-          className="fixed inset-0 bg-black/20 z-10 md:hidden"
-        />
-      )}
+      {isSidebarOpen && <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-40 bg-black/25 md:hidden" />}
 
-      {/* Main Content Area */}
-      <main className="flex-1 ml-0 md:ml-64 p-4 sm:p-8 max-w-5xl pt-24 md:pt-8 w-full overflow-x-hidden">
-        
-        {/* Top Header Bar */}
-        <header className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center mb-8">
-          <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-gray-400 absolute left-4 top-3" />
-            <input 
-              type="text" 
-              placeholder="Search wisdom..." 
+      <main className="mx-auto max-w-6xl px-4 py-4 md:ml-72 md:px-8 md:py-6">
+        <div className="hidden items-center justify-between md:flex">
+          <div className="relative w-full max-w-xl">
+            <Search className="absolute left-4 top-3.5 h-4 w-4 text-stone-400" />
+            <input
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-red-900/20 transition-all" 
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search your feed, library, and connections"
+              className="w-full rounded-full border border-stone-200 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:border-brand-burgundy"
             />
           </div>
-          <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-gray-100">
-            <div className="bg-red-50 text-red-900 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-600解决方案 animate-pulse"></span> 1,240 XP
-            </div>
-            <div className="flex items-center gap-4">
-              <div onClick={() => alert('No new notifications')} className="relative cursor-pointer p-1 hover:bg-gray-100 rounded-full transition-all">
-                <Bell className="w-5 h-5 text-gray-600"/>
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-600 rounded-full border border-white"></span>
-              </div>
-              <HelpCircle onClick={() => alert('Help center module coming soon!')} className="w-5 h-5 text-gray-600 cursor-pointer hover:text-red-900 transition-all" />
-              <img 
-                src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" 
-                alt="Avatar" 
-                className="w-8 h-8 rounded-full border border-gray-200 shadow-sm" 
-              />
-            </div>
-          </div>
-        </header>
-
-        {/* Welcome Block */}
-        <div>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-gray-900" style={{ fontFamily: '"Poppins", sans-serif' }}>
-            Welcome back, {displayName}
-          </h2>
-          <p className="text-gray-400 italic text-xs sm:text-sm mt-1">
-            "Wisdom is the reward you get for a lifetime of listening."
-          </p>
-        </div>
-
-        {/* Dynamic Top Grid Block */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-          {/* Main Hero Card */}
-          <div className="md:col-span-2 bg-red-900 text-white rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[200px] shadow-sm">
-            <div className="space-y-2 z-10">
-              <span className="text-[10px] uppercase bg-white/10 px-2 py-0.5 rounded font-semibold tracking-wider">Mentorship</span>
-              <h3 className="text-2xl font-bold" style={{ fontFamily: '"Poppins", sans-serif' }}>I Teach</h3>
-              <p className="text-xs text-white/70 max-w-xs leading-relaxed">Share your lifetime of experience with a new generation seeking guidance and grounding.</p>
-            </div>
-            <div className="flex justify-between items-center mt-6 z-10">
-              <button 
-                onClick={() => alert('Routing to Student Workspace...')}
-                className="bg-white text-red-900 text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm hover:bg-gray-50 active:scale-95 transition-all"
-              >
-                Manage Students &rarr;
-              </button>
-              <div className="flex -space-x-2">
-                <img className="w-7 h-7 rounded-full border-2 border-red-900" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" alt="Student" />
-                <img className="w-7 h-7 rounded-full border-2 border-red-900" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100" alt="Student" />
-                <div className="w-7 h-7 bg-red-800 text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-red-900 text-white">+4</div>
-              </div>
-            </div>
-            {/* Absolute Background Graphics (Hidden neatly on mobile viewports if cramped) */}
-            <div className="hidden sm:flex absolute right-0 bottom-0 top-0 w-1/3 bg-black/10 flex-col gap-1 p-2 justify-center origin-bottom rotate-12 translate-x-4">
-              <div className="h-6 bg-white/5 rounded-md"></div>
-              <div className="h-6 bg-white/5 rounded-md"></div>
-              <div className="h-6 bg-white/5 rounded-md"></div>
-            </div>
-          </div>
-
-          {/* Side Module Info */}
-          <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm flex flex-col justify-between min-h-[200px]">
-            <div>
-              <h3 className="text-xl font-bold text-gray-900" style={{ fontFamily: '"Poppins", sans-serif' }}>I Learn</h3>
-              <p className="text-xs text-gray-400 mt-2 leading-relaxed">Explore new perspectives from the digital native generation. Stay curious, stay young.</p>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-2xl flex items-center gap-3 border border-gray-100 my-4">
-              <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 font-bold text-sm">💻</div>
-              <div>
-                <h4 className="text-xs font-bold text-gray-800">Modern Tech 101</h4>
-                <p className="text-[10px] text-gray-400">Upcoming: Tuesday, 4 PM</p>
-              </div>
-            </div>
-            <button 
-              onClick={() => alert('Opening workshop directory...')}
-              className="w-full bg-gray-100 text-gray-700 text-xs py-2.5 rounded-xl font-semibold hover:bg-gray-200 transition-all"
-            >
-              Browse Workshops
+          <div className="flex items-center gap-3">
+            <button className="rounded-full border border-stone-200 bg-white p-3">
+              <Bell className="h-4 w-4 text-stone-600" />
             </button>
+            <button onClick={() => navigateTo('/messages')} className="rounded-full bg-brand-burgundy px-4 py-3 text-sm font-bold text-white">
+              Message
+            </button>
+            <ProfileAvatar />
           </div>
         </div>
 
-        {/* Analytical Middle Content Row */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mt-6">
-          <div className="md:col-span-5 bg-white rounded-3xl p-6 border border-gray-100 shadow-sm flex flex-col justify-between gap-4">
-            <h3 className="text-sm font-bold tracking-wide text-gray-400 uppercase">Archive Pulse</h3>
-            <div className="space-y-4 w-full">
-              <div className="flex justify-between items-baseline border-b border-gray-100 pb-2">
-                <span className="text-xs text-gray-500 font-medium">Stories Shared</span>
-                <span className="text-2xl font-bold text-gray-900">24</span>
-              </div>
-              <div className="flex justify-between items-baseline border-b border-gray-100 pb-2">
-                <span className="text-xs text-gray-500 font-medium">Global Impact</span>
-                <span className="text-xl font-bold text-red-900" style={{ fontFamily: '"Poppins", sans-serif' }}>High</span>
-              </div>
-              <div className="flex justify-between items-baseline">
-                <span className="text-xs text-gray-500 font-medium">Mentor Score</span>
-                <span className="text-xl font-bold text-gray-900">4.9<span className="text-xs text-gray-400 font-normal">/5</span></span>
-              </div>
-            </div>
-          </div>
-
-          <div className="md:col-span-7 bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-bold text-gray-900" style={{ fontFamily: '"Poppins", sans-serif' }}>Recommended for You</h3>
-              <a href="#" onClick={(e) => { e.preventDefault(); alert('Loading recommendations...'); }} className="text-xs text-red-700 font-semibold hover:underline">See all</a>
-            </div>
-            <div className="space-y-4">
-              {/* Rec Item 1 */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex gap-3 items-center min-w-0">
-                  <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white text-sm shrink-0">🌐</div>
-                  <div className="min-w-0">
-                    <h4 className="text-xs font-bold text-gray-800 truncate">Navigating Digital Landscapes</h4>
-                    <p className="text-[10px] text-gray-400 flex flex-wrap items-center gap-1 mt-0.5">
-                      <span>Tools...</span>
-                      <span className="uppercase text-[8px] bg-gray-100 px-1 py-0.5 rounded font-semibold text-gray-500">Technology</span> 
-                      <span>• 45 mins</span>
-                    </p>
+        <section className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-12">
+          <div className="space-y-5 lg:col-span-8">
+            <div className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm">
+              <div className="flex gap-3">
+                <ProfileAvatar />
+                <div className="min-w-0 flex-1">
+                  <textarea
+                    value={composerText}
+                    onChange={(event) => setComposerText(event.target.value)}
+                    placeholder="Create a post for the community feed..."
+                    className="min-h-24 w-full resize-none rounded-3xl border border-stone-200 bg-[#FBF9F6] p-4 text-sm outline-none focus:border-brand-burgundy"
+                  />
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex gap-2">
+                      <button onClick={() => navigateTo('/recording')} className="flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">
+                        <Mic2 className="h-4 w-4" />
+                        Story
+                      </button>
+                      <button onClick={() => navigateTo('/call')} className="flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">
+                        <Video className="h-4 w-4" />
+                        Live
+                      </button>
+                    </div>
+                    <button onClick={publishLocalPost} disabled={!composerText.trim()} className="rounded-full bg-brand-burgundy px-5 py-2.5 text-xs font-bold text-white disabled:opacity-40">
+                      Publish
+                    </button>
                   </div>
                 </div>
-                <button 
-                  onClick={() => handleToggleAdd('item1')}
-                  className={`w-7 h-7 border rounded-full flex items-center justify-center shrink-0 transition-all ${
-                    addedItems['item1'] ? 'bg-green-50 border-green-500 text-green-600' : 'border-gray-200 text-gray-400 hover:border-red-900 hover:text-red-900'
-                  }`}
-                >
-                  {addedItems['item1'] ? <Check className="w-3.5 h-3.5" /> : '+'}
-                </button>
               </div>
+            </div>
 
-              {/* Rec Item 2 */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex gap-3 items-center min-w-0">
-                  <div className="w-10 h-10 bg-emerald-950 rounded-xl flex items-center justify-center text-white text-sm shrink-0">📜</div>
-                  <div className="min-w-0">
-                    <h4 className="text-xs font-bold text-gray-800 truncate">The Art of Oral History</h4>
-                    <p className="text-[10px] text-gray-400 flex flex-wrap items-center gap-1 mt-0.5">
-                      <span>Techniques...</span>
-                      <span className="uppercase text-[8px] bg-gray-100 px-1 py-0.5 rounded font-semibold text-gray-500">Legacy</span> 
-                      <span>• 60 mins</span>
-                    </p>
-                  </div>
+            {filteredFeed.length === 0 ? (
+              <div className="rounded-[2rem] border border-dashed border-stone-300 bg-white p-10 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-brand-burgundy">
+                  <BookOpen className="h-6 w-6" />
                 </div>
-                <button 
-                  onClick={() => handleToggleAdd('item2')}
-                  className={`w-7 h-7 border rounded-full flex items-center justify-center shrink-0 transition-all ${
-                    addedItems['item2'] ? 'bg-green-50 border-green-500 text-green-600' : 'border-gray-200 text-gray-400 hover:border-red-900 hover:text-red-900'
-                  }`}
-                >
-                  {addedItems['item2'] ? <Check className="w-3.5 h-3.5" /> : '+'}
+                <h2 className="mt-4 text-base font-bold">Your feed is ready for real content</h2>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-stone-500">
+                  Connect `/feed` and `/recommendations` to MongoDB + Redis. Posts, stories, and ranked recommendations will render here.
+                </p>
+                <button onClick={() => navigateTo('/recording')} className="mt-5 rounded-full bg-brand-burgundy px-5 py-3 text-xs font-bold text-white">
+                  Upload first story
                 </button>
               </div>
-            </div>
+            ) : (
+              filteredFeed.map((item) => (
+                <article key={item.id} className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-burgundy text-sm font-bold text-white">
+                      {(item.author_name || 'U').slice(0, 1).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold">{item.author_name || 'Community member'}</p>
+                      <p className="text-[11px] text-stone-500">{item.type || 'post'}</p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-sm leading-relaxed text-stone-700">{item.body || item.title}</p>
+                  {item.media_url && <img src={item.media_url} alt="" className="mt-4 aspect-[9/16] max-h-[520px] w-full rounded-3xl object-cover" />}
+                  <div className="mt-4 flex items-center gap-3 border-t border-stone-100 pt-3 text-xs font-bold text-stone-500">
+                    <button className="flex items-center gap-1.5 rounded-full px-3 py-2 hover:bg-stone-100">
+                      <MessageCircle className="h-4 w-4" />
+                      Comment
+                    </button>
+                    <button className="flex items-center gap-1.5 rounded-full px-3 py-2 hover:bg-stone-100">
+                      <Send className="h-4 w-4" />
+                      Share
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
           </div>
-        </div>
 
-        {/* Footer Accent Promo CTA */}
-        <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm mt-6 flex flex-col sm:flex-row justify-between items-center gap-6">
-          <div className="space-y-2 w-full sm:flex-1">
-            <h3 className="text-xl font-bold text-gray-900" style={{ fontFamily: '"Poppins", sans-serif' }}>Your legacy is waiting.</h3>
-            <p className="text-xs text-gray-400 max-w-md leading-relaxed">Every story you tell is a bridge to someone's future. Our newest archival tools allow you to record and tag your memories for the next generation.</p>
-            <div className="flex items-center gap-4 pt-2">
-              <button onClick={() => alert('Opening Archive Panel...')} className="bg-red-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm hover:bg-red-950 transition-all">
-                Open The Archive
-              </button>
-              <button onClick={() => alert('Loading documentation...')} className="text-xs text-red-900 font-bold hover:underline">
-                Learn more
-              </button>
+          <aside className="space-y-5 lg:col-span-4">
+            <div className="rounded-[2rem] border border-stone-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-bold">Root Points</h3>
+              <p className="mt-1 text-xs text-stone-500">Connect the Point Service to show balances, badges, and daily limits.</p>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-2xl bg-[#FBF9F6] p-3">
+                  <p className="text-lg font-bold text-brand-burgundy">{pointsSummary?.balance ?? 0}</p>
+                  <p className="text-[10px] text-stone-500">Points</p>
+                </div>
+                <div className="rounded-2xl bg-[#FBF9F6] p-3">
+                  <p className="text-lg font-bold text-brand-burgundy">{pointsSummary?.badges ?? 0}</p>
+                  <p className="text-[10px] text-stone-500">Badges</p>
+                </div>
+                <div className="rounded-2xl bg-[#FBF9F6] p-3">
+                  <p className="text-lg font-bold text-brand-burgundy">{pointsSummary?.rank ?? '-'}</p>
+                  <p className="text-[10px] text-stone-500">Rank</p>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="w-full sm:w-44 h-28 bg-gray-100 rounded-2xl overflow-hidden relative shadow-inner shrink-0">
-            <div className="absolute inset-0 bg-cover bg-center bg-[url('https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=300')]"></div>
-          </div>
-        </div>
+
+            <div className="rounded-[2rem] border border-stone-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-bold">Recommendations</h3>
+              {recommendations.length === 0 ? (
+                <p className="mt-2 text-xs leading-relaxed text-stone-500">
+                  `/recommendations` can return connection suggestions once your ranking engine is online.
+                </p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {recommendations.map((item) => (
+                    <button key={item.id} className="w-full rounded-2xl bg-[#FBF9F6] p-3 text-left text-sm font-bold">
+                      {item.title || item.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
+        </section>
       </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-stone-200 bg-white px-2 py-2 md:hidden">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = location.pathname === item.path && !item.primary;
+          return (
+            <button
+              key={item.name}
+              onClick={() => navigateTo(item.path)}
+              className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[10px] font-bold ${
+                item.primary ? 'bg-brand-burgundy text-white' : isActive ? 'text-brand-burgundy' : 'text-stone-400'
+              }`}
+            >
+              <Icon className="h-5 w-5" />
+              {item.name}
+            </button>
+          );
+        })}
+      </nav>
+
+      {isProfileOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/30 p-0 md:items-center md:justify-center md:p-6">
+          <div className="w-full rounded-t-[2rem] bg-white p-5 shadow-xl md:max-w-sm md:rounded-[2rem]">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <ProfileAvatar size="h-16 w-16" />
+                <div>
+                  <h2 className="text-lg font-bold">{displayName}</h2>
+                  <p className="text-sm text-stone-500">{appUser?.email}</p>
+                  <p className="mt-1 text-xs font-bold text-brand-burgundy">{appUser?.identity || 'Community member'}</p>
+                </div>
+              </div>
+              <button onClick={() => setIsProfileOpen(false)} className="rounded-full p-2 hover:bg-stone-100" aria-label="Close profile">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-2xl bg-[#FBF9F6] p-3">
+                <p className="text-[10px] uppercase tracking-wider text-stone-400">Language</p>
+                <p className="mt-1 font-bold">{appUser?.language || 'Not set'}</p>
+              </div>
+              <div className="rounded-2xl bg-[#FBF9F6] p-3">
+                <p className="text-[10px] uppercase tracking-wider text-stone-400">Root Points</p>
+                <p className="mt-1 font-bold">{appUser?.root_points || 0}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

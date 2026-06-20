@@ -1,77 +1,160 @@
-import React from 'react';
-import { X, Pause, Square, FileText, UploadCloud, Bell, HelpCircle } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { ArrowLeft, ImagePlus, Library, Mic, Pause, Play, Send, UploadCloud, Video, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-export default function RecordingSession() {
-  // Static mockup array weights representing active audio frequencies
-  const audioBars = [16, 24, 40, 18, 56, 32, 68, 22, 50, 44, 60, 36, 28, 54, 40, 48, 14, 58, 30, 62, 12];
+export default function RecordingSession({ libraryItems = [] }) {
+  const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [caption, setCaption] = useState('');
+  const [storyType, setStoryType] = useState('video');
+  const [isRecording, setIsRecording] = useState(false);
+  const [localStories, setLocalStories] = useState([]);
+
+  const handleFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setSelectedFile(file);
+    setStoryType(file.type.startsWith('video/') ? 'video' : 'image');
+    setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const clearSelection = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setSelectedFile(null);
+    setPreviewUrl('');
+    setCaption('');
+  };
+
+  const publishStory = () => {
+    if (!selectedFile && !caption.trim()) return;
+    setLocalStories((prev) => [
+      {
+        id: `local-story-${Date.now()}`,
+        caption: caption.trim(),
+        previewUrl,
+        type: storyType,
+        localOnly: true,
+      },
+      ...prev,
+    ]);
+    setSelectedFile(null);
+    setPreviewUrl('');
+    setCaption('');
+  };
 
   return (
-    <div className="min-h-screen bg-brand-bgLight p-6 font-sans">
-      {/* Upper Navigation Anchor Row */}
-      <header className="flex justify-between items-center mb-10 max-w-4xl mx-auto">
-        <h1 className="font-serif font-bold text-brand-burgundy text-lg tracking-wide">Recording Session</h1>
-        <div className="flex items-center gap-4">
-          <div className="relative cursor-pointer"><Bell className="w-4 h-4 text-gray-500"/><span className="absolute top-0 right-0 w-1.5 h-1.5 bg-red-600 rounded-full"></span></div>
-          <HelpCircle className="w-4 h-4 text-gray-500 cursor-pointer" />
-          <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80" className="w-7 h-7 rounded-full" />
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0F0D0C] text-white md:bg-[#F8F7F4] md:p-6 md:text-stone-900">
+      <div className="mx-auto grid min-h-screen max-w-6xl grid-cols-1 overflow-hidden bg-black md:min-h-[760px] md:grid-cols-12 md:rounded-[2rem] md:bg-white md:shadow-sm">
+        <section className="relative flex min-h-[72vh] flex-col bg-black md:col-span-7 md:min-h-full">
+          <header className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between p-4">
+            <button onClick={() => navigate('/dashboard')} className="rounded-full bg-black/40 p-2 text-white backdrop-blur" aria-label="Back">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <span className="rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur">
+              Story upload
+            </span>
+            <button onClick={clearSelection} className="rounded-full bg-black/40 p-2 text-white backdrop-blur" aria-label="Clear">
+              <X className="h-5 w-5" />
+            </button>
+          </header>
 
-      <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-        {/* Main Recorder Workspace Area */}
-        <div className="md:col-span-8 bg-white rounded-3xl p-8 border border-gray-100 shadow-sm flex flex-col items-center justify-center min-h-[440px]">
-          <div className="bg-red-50 text-red-700 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1.5 mb-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse"></span> Recording Live
+          <div className="flex flex-1 items-center justify-center">
+            {previewUrl ? (
+              storyType === 'video' ? (
+                <video src={previewUrl} controls className="h-full max-h-screen w-full object-contain" />
+              ) : (
+                <img src={previewUrl} alt="Story preview" className="h-full max-h-screen w-full object-contain" />
+              )
+            ) : (
+              <div className="px-8 text-center">
+                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/10">
+                  <Video className="h-9 w-9 text-white" />
+                </div>
+                <h1 className="mt-5 text-2xl font-bold">Create a story</h1>
+                <p className="mt-2 text-sm leading-relaxed text-white/60">
+                  Upload vertical video, audio, or images. Published content will appear in the community feed once `/stories` and `/feed` are connected.
+                </p>
+              </div>
+            )}
           </div>
-          
-          <div className="text-5xl font-serif text-brand-darkText font-bold tracking-tight">04:12</div>
-          <p className="text-xs text-gray-400 mt-2 font-medium">Life Story: The Summer of 1968</p>
 
-          {/* Sound Waveform Visualization Block Container */}
-          <div className="w-full bg-gray-50 rounded-2xl h-32 my-8 flex items-center justify-center gap-1 px-6 border border-gray-100/80">
-            {audioBars.map((height, idx) => (
-              <div 
-                key={idx} 
-                className="w-1.5 bg-brand-burgundy rounded-full transition-all duration-300"
-                style={{ height: `${height}%` }}
-              ></div>
-            ))}
-          </div>
-
-          {/* Controls Bar */}
-          <div className="flex items-center justify-center gap-6">
-            <button className="w-10 h-10 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition-all"><X className="w-4 h-4" /></button>
-            <button className="w-14 h-14 rounded-full bg-brand-burgundy text-white flex items-center justify-center shadow-lg shadow-red-900/20 hover:scale-102 transition-all ring-4 ring-red-50"><Pause className="w-5 h-5 fill-white" /></button>
-            <button className="w-10 h-10 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition-all"><Square className="w-4 h-4 fill-gray-500" /></button>
-          </div>
-        </div>
-
-        {/* Right Side Segment: Realtime Live Transcription Box */}
-        <div className="md:col-span-4 space-y-4">
-          <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
-            <div className="flex justify-between items-center text-brand-darkText">
-              <h3 className="font-serif font-bold text-sm">Transcription Preview</h3>
-              <span className="text-brand-burgundy text-xs">📝</span>
-            </div>
-            
-            <div className="space-y-3 font-serif text-xs text-gray-400/90 leading-relaxed overflow-y-auto max-h-[220px] pr-1">
-              <p className="italic">"...it was a warm Tuesday afternoon when we first saw the shoreline. The air smelled of salt and promise..."</p>
-              <p className="text-gray-700 font-sans not-italic">"My brother was holding the old Leica camera, the same one Dad brought back from the service. We didn't know then that this would be the last summer..."</p>
-            </div>
-
-            <div className="pt-4 border-t border-gray-100 space-y-2">
-              <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider block">Post-Recording Actions</span>
-              
-              <button className="w-full bg-brand-roseMuted text-white text-xs py-2.5 px-4 rounded-xl font-medium flex items-center justify-center gap-2 shadow-sm hover:bg-opacity-95 transition-all">
-                <UploadCloud className="w-3.5 h-3.5"/> Publish to Archive
-              </button>
-              
-              <button className="w-full bg-gray-100 text-gray-700 text-xs py-2.5 px-4 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-gray-200 transition-all">
-                <FileText className="w-3.5 h-3.5"/> Full Transcription
+          <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-16">
+            <textarea
+              value={caption}
+              onChange={(event) => setCaption(event.target.value)}
+              placeholder="Add a caption, language, context, or tags..."
+              className="min-h-20 w-full resize-none rounded-3xl border border-white/10 bg-white/10 p-4 text-sm text-white placeholder:text-white/45 outline-none backdrop-blur focus:border-white/40"
+            />
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={handleFileChange} className="hidden" />
+              <div className="flex gap-2">
+                <button onClick={() => fileInputRef.current?.click()} className="rounded-full bg-white px-4 py-3 text-xs font-bold text-stone-900">
+                  <ImagePlus className="mr-1.5 inline h-4 w-4" />
+                  Upload
+                </button>
+                <button onClick={() => setIsRecording((value) => !value)} className={`rounded-full px-4 py-3 text-xs font-bold text-white ${isRecording ? 'bg-red-600' : 'bg-white/15'}`}>
+                  {isRecording ? <Pause className="mr-1.5 inline h-4 w-4" /> : <Mic className="mr-1.5 inline h-4 w-4" />}
+                  {isRecording ? 'Pause' : 'Voice'}
+                </button>
+              </div>
+              <button onClick={publishStory} disabled={!selectedFile && !caption.trim()} className="rounded-full bg-brand-burgundy px-5 py-3 text-xs font-bold text-white disabled:opacity-40">
+                <Send className="mr-1.5 inline h-4 w-4" />
+                Publish
               </button>
             </div>
           </div>
-        </div>
+        </section>
+
+        <aside className="bg-[#F8F7F4] p-5 text-stone-900 md:col-span-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-burgundy">Archive</p>
+              <h2 className="mt-1 text-xl font-bold">Knowledge library</h2>
+            </div>
+            <Library className="h-5 w-5 text-brand-burgundy" />
+          </div>
+
+          <div className="mt-5 rounded-3xl border border-stone-200 bg-white p-4">
+            <h3 className="text-sm font-bold">Content Service endpoints</h3>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {['/posts', '/stories', '/library', '/feed', '/recommendations'].map((endpoint) => (
+                <span key={endpoint} className="rounded-full bg-red-50 px-3 py-1.5 text-[11px] font-bold text-brand-burgundy">
+                  {endpoint}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {[...localStories, ...libraryItems].length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-stone-300 bg-white p-8 text-center">
+                <UploadCloud className="mx-auto h-8 w-8 text-brand-burgundy" />
+                <h3 className="mt-3 text-sm font-bold">No uploaded stories yet</h3>
+                <p className="mt-2 text-xs leading-relaxed text-stone-500">
+                  Your real MongoDB posts, stories, and knowledge articles will appear here after the media upload service is connected.
+                </p>
+              </div>
+            ) : (
+              [...localStories, ...libraryItems].map((item) => (
+                <div key={item.id} className="flex items-center gap-3 rounded-3xl border border-stone-200 bg-white p-3">
+                  <div className="flex h-14 w-10 items-center justify-center overflow-hidden rounded-2xl bg-stone-900 text-white">
+                    {item.previewUrl ? (
+                      item.type === 'video' ? <Play className="h-5 w-5 fill-current" /> : <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <Library className="h-5 w-5" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold">{item.caption || item.title || 'Untitled story'}</p>
+                    <p className="text-[11px] text-stone-500">{item.localOnly ? 'Local preview' : 'Published'}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </aside>
       </div>
     </div>
   );

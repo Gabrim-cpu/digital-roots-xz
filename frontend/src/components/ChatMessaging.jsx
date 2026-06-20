@@ -1,485 +1,251 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Mic, Paperclip, Play, Send, Square, Users } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
-import { useState, useRef, useEffect } from "react";
-import { User, Message } from "../types";
-import { Send, Mic, Play, Globe, MessageSquare, AlertCircle, Bot, User as UserIcon, Sparkles } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
-
-interface ChatMessagingProps {
-  currentUser: User;
-  connectedUsers: User[];
-}
-
-const CHAT_PRESETS = [
-  {
-    language: "Duala",
-    original: "A begé lara wa mo ndedi. Onola mboti.",
-    meaning: "Please guide my hand carefully while setting up my mobile wallet.",
-  },
-  {
-    language: "Ewondo",
-    original: "Mebanga o lara ma eyidi internet.",
-    meaning: "I am trying to learn how to connect my camera on WhatsApp.",
-  }
-];
-
-export default function ChatMessaging({ currentUser, connectedUsers }: ChatMessagingProps) {
-  const [activePartner, setActivePartner] = useState<User | null>(connectedUsers[0] || null);
-  const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>({});
+export default function ChatMessaging({
+  currentUser,
+  threads = [],
+  messagesByThread = {},
+  onSendMessage,
+  onSendVoiceNote,
+}) {
+  const navigate = useNavigate();
+  const [activeThreadId, setActiveThreadId] = useState(threads[0]?.id || null);
   const [inputText, setInputText] = useState("");
-  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState<string | null>(null);
+  const [localMessages, setLocalMessages] = useState(messagesByThread);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const listEndRef = useRef(null);
 
-  const listEndRef = useRef<HTMLDivElement | null>(null);
+  const activeThread = threads.find((thread) => thread.id === activeThreadId) || null;
+  const currentMessages = activeThreadId ? localMessages[activeThreadId] || [] : [];
 
-  // Initialize conversations with some welcome messages
   useEffect(() => {
-    const initialMap: Record<string, Message[]> = {};
-    connectedUsers.forEach((user) => {
-      if (user.role === "senior") {
-        initialMap[user.id] = [
-          {
-            id: `init-1-${user.id}`,
-            senderId: user.id,
-            receiverId: currentUser.id,
-            content: "Hello! Thank you for volunteering to help me learn how to use these smartphones. I would love to share some of my favorite oral folklore stories in return.",
-            type: "text",
-            timestamp: new Date(Date.now() - 3600000).toISOString(),
-          }
-        ];
-      } else {
-        initialMap[user.id] = [
-          {
-            id: `init-1-${user.id}`,
-            senderId: user.id,
-            receiverId: currentUser.id,
-            content: "Greetings, Elder! I am excited to connect. I can help with anything, from secure mobile money to internet safety, and I am very keen to learn your traditional wisdom.",
-            type: "text",
-            timestamp: new Date(Date.now() - 3600000).toISOString(),
-          }
-        ];
-      }
-    });
+    setLocalMessages(messagesByThread);
+  }, [messagesByThread]);
 
-    // Add chatbot companion
-    initialMap["ngala-bot"] = [
-      {
-        id: "bot-init",
-        senderId: "ngala-bot",
-        receiverId: currentUser.id,
-        content: currentUser.role === "senior"
-          ? "Welcome! I am Ngalá, your AI Digital Helper. Introduce yourself or ask me questions like: 'How do I join a video call?' or 'What is a browser?' in natural simple words."
-          : "Salutations! I am Ngalá, your AI Cultural Sage. Ask me about Cameroonian dialects, the history of Ndolé, Ewondo proverbs, or Duala traditions.",
-        type: "text",
-        timestamp: new Date().toISOString(),
-      }
-    ];
-
-    setMessagesMap(initialMap);
-  }, [connectedUsers, currentUser.id]);
+  useEffect(() => {
+    if (!activeThreadId && threads.length > 0) {
+      setActiveThreadId(threads[0].id);
+    }
+  }, [activeThreadId, threads]);
 
   useEffect(() => {
     listEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messagesMap, activePartner]);
+  }, [currentMessages.length, activeThreadId]);
 
-  const handleSendMessage = async (text: string, type: "text" | "voice" = "text", voiceMeta?: { duration: string; translation?: string }) => {
-    if (!activePartner) return;
+  const addLocalMessage = (message) => {
+    if (!activeThreadId) return;
+    setLocalMessages((prev) => ({
+      ...prev,
+      [activeThreadId]: [...(prev[activeThreadId] || []), message],
+    }));
+  };
 
-    const partnerId = activePartner.id;
-    const newMessage: Message = {
-      id: `msg-${Date.now()}`,
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const content = inputText.trim();
+    if (!content || !activeThreadId) return;
+
+    const message = {
+      id: `local-${Date.now()}`,
       senderId: currentUser.id,
-      receiverId: partnerId,
-      content: text,
-      type,
-      timestamp: new Date().toISOString(),
-      ...(type === "voice"
-        ? {
-            voiceUrl: "mock_voice.mp3",
-            voiceDuration: voiceMeta?.duration || "0:04",
-            transcript: text,
-            translation: voiceMeta?.translation,
-          }
-        : {}),
+      content,
+      type: "text",
+      status: "sending",
+      createdAt: new Date().toISOString(),
     };
 
-    setMessagesMap((prev) => ({
-      ...prev,
-      [partnerId]: [...(prev[partnerId] || []), newMessage],
-    }));
-
+    addLocalMessage(message);
     setInputText("");
-
-    // Simulate AI response or buddy response
-    if (partnerId === "ngala-bot") {
-      simulateNgalabotResponse(text);
-    } else {
-      simulatePartnerResponse(partnerId, text);
-    }
+    await onSendMessage?.({ threadId: activeThreadId, content });
   };
 
-  const simulatePartnerResponse = (partnerId: string, userText: string) => {
-    const partner = connectedUsers.find((u) => u.id === partnerId);
-    if (!partner) return;
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || !activeThreadId) return;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordedChunksRef.current = [];
+    const recorder = new MediaRecorder(stream);
+    mediaRecorderRef.current = recorder;
 
-    setIsTranscribing("partner-typing");
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) recordedChunksRef.current.push(event.data);
+    };
 
-    setTimeout(() => {
-      setIsTranscribing(null);
-      let replyContent = "That sounds fascinating! I look forward to discussing this more in our next live mentorship video session. Let's schedule one soon.";
-      
-      if (currentUser.role === "senior") {
-        if (userText.toLowerCase().includes("money") || userText.toLowerCase().includes("pay") || userText.toLowerCase().includes("cash")) {
-          replyContent = "I can definitely show you how to securely set up Mobile Money, Elder! Always remember to never share your 4-digit PIN with anyone, even agents.";
-        } else if (userText.toLowerCase().includes("whatsapp") || userText.toLowerCase().includes("call") || userText.toLowerCase().includes("video")) {
-          replyContent = "Excellent choice, Elder! Video calling on WhatsApp is easy. We will practice making calls during our scheduled session tomorrow.";
-        }
-      } else {
-        if (userText.toLowerCase().includes("folklore") || userText.toLowerCase().includes("story") || userText.toLowerCase().includes("recipe")) {
-          replyContent = "Thank you so much! That is exactly the heritage I want to preserve. Have you recorded it in the Audio story archive yet?";
-        }
-      }
-
-      const partnerMessage: Message = {
-        id: `msg-${Date.now() + 1}`,
-        senderId: partnerId,
-        receiverId: currentUser.id,
-        content: replyContent,
-        type: "text",
-        timestamp: new Date().toISOString(),
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
+      const voiceUrl = URL.createObjectURL(blob);
+      const message = {
+        id: `voice-${Date.now()}`,
+        senderId: currentUser.id,
+        content: "Voice note",
+        type: "voice",
+        voiceUrl,
+        status: "sending",
+        createdAt: new Date().toISOString(),
       };
+      addLocalMessage(message);
+      await onSendVoiceNote?.({ threadId: activeThreadId, blob });
+    };
 
-      setMessagesMap((prev) => ({
-        ...prev,
-        [partnerId]: [...(prev[partnerId] || []), partnerMessage],
-      }));
-    }, 2000);
+    recorder.start();
+    setIsRecording(true);
   };
 
-  const simulateNgalabotResponse = async (userText: string) => {
-    setIsTranscribing("bot-typing");
-
-    try {
-      // Direct call to Gemini AI Proxy on server
-      const response = await fetch("/api/expert-advice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: userText,
-          userRole: currentUser.role,
-          primaryLanguage: currentUser.language,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Bot proxy failed");
-      }
-
-      const data = await response.json();
-      
-      const botMessage: Message = {
-        id: `msg-${Date.now() + 1}`,
-        senderId: "ngala-bot",
-        receiverId: currentUser.id,
-        content: data.reply || "I am reflecting on your request. Let us connect generationally.",
-        type: "text",
-        timestamp: new Date().toISOString(),
-      };
-
-      setMessagesMap((prev) => ({
-        ...prev,
-        "ngala-bot": [...(prev["ngala-bot"] || []), botMessage],
-      }));
-    } catch (err) {
-      console.warn("Using localized fallback reply for ChatBot Companion.", err);
-      // Fallback
-      let fallbackReply = "Let's explore that topic! Together Gen X and Gen Z can solve anything.";
-      if (currentUser.role === "senior") {
-        fallbackReply = "To set up a video call, click the 'Mentorship Sessions' tab, look for Malik's invitation, and press 'Join Live video'. Very simple and secure!";
-      } else {
-        fallbackReply = "Cameroon features over 250 local languages. EWONDO and DUALA are major Bantu languages. Elders say: 'Wisdom is like a baobab tree; single arms cannot embrace it.'";
-      }
-
-      const botMessage: Message = {
-        id: `msg-${Date.now() + 1}`,
-        senderId: "ngala-bot",
-        receiverId: currentUser.id,
-        content: fallbackReply,
-        type: "text",
-        timestamp: new Date().toISOString(),
-      };
-
-      setMessagesMap((prev) => ({
-        ...prev,
-        "ngala-bot": [...(prev["ngala-bot"] || []), botMessage],
-      }));
-    } finally {
-      setIsTranscribing(null);
-    }
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
   };
-
-  const handleSendVoicePreset = (presetIdx: number) => {
-    const preset = CHAT_PRESETS[presetIdx];
-    if (!preset) return;
-
-    setIsRecordingVoice(true);
-    setTimeout(() => {
-      setIsRecordingVoice(false);
-      handleSendMessage(preset.original, "voice", {
-        duration: "0:06",
-        translation: preset.meaning,
-      });
-    }, 1500);
-  };
-
-  const currentMessages = activePartner ? messagesMap[activePartner.id] || [] : [];
 
   return (
-    <div id="chat-messaging-container" className="grid grid-cols-1 md:grid-cols-12 bg-white rounded-3xl border border-stone-100 shadow-sm overflow-hidden min-h-[500px]">
-      {/* Partners List Side Panel (Cols = 4) */}
-      <div className="md:col-span-4 border-r border-stone-100 p-4 bg-stone-50/50 flex flex-col justify-between">
-        <div>
-          <span className="text-[10px] font-mono tracking-widest text-[#7A1C16] font-bold uppercase mb-3 block">
-            Connections Messaging
-          </span>
-
-          <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
-            {/* Real connections */}
-            {connectedUsers.map((user) => {
-              const isActive = activePartner?.id === user.id;
-              return (
-                <button
-                  key={user.id}
-                  onClick={() => setActivePartner(user)}
-                  className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-all text-left cursor-pointer ${
-                    isActive ? "bg-[#7A1C16] text-[#FDFBF7] shadow-sm" : "bg-white hover:bg-stone-100 text-stone-800 border border-stone-100"
-                  }`}
-                  style={{ gap: "12px" }}
-                  type="button"
-                >
-                  <img
-                    referrerPolicy="no-referrer"
-                    src={user.avatar}
-                    alt={user.name}
-                    className="w-10 h-10 rounded-full object-cover border border-white/20 shrink-0"
-                  />
-                  <div className="overflow-hidden">
-                    <h4 className="font-bold text-sm leading-tight truncate">{user.name}</h4>
-                    <span className={`text-[10px] font-mono leading-none ${isActive ? "text-amber-200" : "text-stone-400"}`}>
-                      {user.role === "senior" ? `Elder (${user.language})` : `Youth (Mentor)`}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-
-            {/* AI Assistant companion connection card */}
-            <button
-              onClick={() => setActivePartner({
-                id: "ngala-bot",
-                name: "Ngalá (AI Sage)",
-                email: "ngala@digitalroots.org",
-                age: 35,
-                role: "admin",
-                language: currentUser.language,
-                avatar: "bot_avatar",
-                points: 9999,
-                interests: ["African History", "Digital Literacy"]
-              })}
-              className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-all text-left cursor-pointer ${
-                activePartner?.id === "ngala-bot"
-                  ? "bg-[#7A1C16] text-white shadow-sm"
-                  : "bg-amber-50/70 hover:bg-amber-100 text-stone-800 border border-amber-100"
-              }`}
-              style={{ gap: "12px" }}
-              type="button"
-            >
-              <div className="w-10 h-10 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0">
-                <Bot className="w-5 h-5" />
-              </div>
-              <div className="overflow-hidden">
-                <h4 className="font-bold text-sm leading-tight flex items-center gap-1.5">
-                  Ngalá (AI Companion)
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse fill-amber-300" />
-                </h4>
-                <span className="text-[10px] font-mono leading-none text-stone-400">
-                  Dual Digital/Culture assistant
-                </span>
-              </div>
+    <div className="min-h-screen bg-[#F8F7F4] md:p-6">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col bg-white md:min-h-[760px] md:rounded-[2rem] md:border md:border-stone-200 md:shadow-sm">
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-stone-200 bg-white/95 px-4 py-3 backdrop-blur md:rounded-t-[2rem]">
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate("/dashboard")} className="rounded-full p-2 hover:bg-stone-100" aria-label="Back to dashboard">
+              <ArrowLeft className="h-5 w-5" />
             </button>
+            <div>
+              <h1 className="text-base font-bold text-stone-900">Messages</h1>
+              <p className="text-[11px] text-stone-500">Real-time text and voice messaging</p>
+            </div>
           </div>
-        </div>
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-bold text-emerald-700">WebSocket ready</span>
+        </header>
 
-        {/* Cameroon Anchor cultural reference card */}
-        <div className="bg-[#7A1C16]/5 border border-[#7A1C16]/10 p-4 rounded-2xl hidden md:block">
-          <h5 className="font-serif font-bold text-stone-800 text-xs mb-1 flex items-center gap-1.5">
-            <Globe className="w-4 h-4 text-[#7A1C16]" />
-            Pillar 3: Dual Native Tags
-          </h5>
-          <p className="text-[11px] text-stone-500 leading-relaxed">
-            Record voice notes in traditional tongues below to trigger auto phonetic translations using server-side Gemini.
-          </p>
-        </div>
-      </div>
+        <div className="grid flex-1 grid-cols-1 md:grid-cols-12">
+          <aside className={`${activeThread ? "hidden md:flex" : "flex"} flex-col border-r border-stone-200 bg-[#FBF9F6] md:col-span-4`}>
+            <div className="border-b border-stone-200 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-burgundy">Threads</p>
+            </div>
 
-      {/* Main Conversational Messenger (Cols = 8) */}
-      <div className="md:col-span-8 flex flex-col justify-between h-[520px]">
-        {/* Active conversation header */}
-        <div className="p-4 border-b border-stone-100 bg-stone-50/20 flex items-center gap-3">
-          {activePartner && activePartner.id !== "ngala-bot" ? (
-            <>
-              <img
-                referrerPolicy="no-referrer"
-                src={activePartner.avatar}
-                alt={activePartner.name}
-                className="w-10 h-10 rounded-full object-cover border border-stone-200"
-              />
-              <div>
-                <h3 className="font-bold text-stone-900 text-sm">{activePartner.name}</h3>
-                <span className="text-xs text-stone-400">
-                  {activePartner.role === "senior"
-                    ? `Traditional knowledge keeper • Primary dialect: ${activePartner.language}`
-                    : `Sleek Digital Mentor`}
-                </span>
+            {threads.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-brand-burgundy">
+                  <Users className="h-6 w-6" />
+                </div>
+                <h2 className="mt-4 text-sm font-bold text-stone-900">No conversations yet</h2>
+                <p className="mt-2 max-w-xs text-xs leading-relaxed text-stone-500">
+                  Connect this screen to your `/messages` threads from MongoDB. New accepted connections will appear here.
+                </p>
               </div>
-            </>
-          ) : (
-            <>
-              <div className="w-10 h-10 rounded-full bg-amber-500 text-white flex items-center justify-center">
-                <Bot className="w-5 h-5" />
+            ) : (
+              <div className="flex-1 overflow-y-auto p-3">
+                {threads.map((thread) => {
+                  const isActive = thread.id === activeThreadId;
+                  const title = thread.title || thread.participantName || "Conversation";
+                  return (
+                    <button
+                      key={thread.id}
+                      onClick={() => setActiveThreadId(thread.id)}
+                      className={`w-full rounded-2xl p-3 text-left transition-all ${
+                        isActive ? "bg-brand-burgundy text-white" : "hover:bg-white"
+                      }`}
+                    >
+                      <p className="text-sm font-bold">{title}</p>
+                      <p className={`mt-1 truncate text-[11px] ${isActive ? "text-white/70" : "text-stone-500"}`}>
+                        {thread.lastMessage || "No messages yet"}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
-              <div>
-                <h3 className="font-bold text-stone-900 text-sm">Ngalá AI Helper</h3>
-                <span className="text-xs text-stone-400">Dual Expert: Digital Smartphone navigation & West African Traditions</span>
-              </div>
-            </>
-          )}
-        </div>
+            )}
+          </aside>
 
-        {/* Conversation Stream */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#FDFBF9]">
-          {currentMessages.map((msg, index) => {
-            const isMe = msg.senderId === currentUser.id;
-            return (
-              <div key={msg.id || index} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[75%] rounded-2xl p-3.5 shadow-sm text-sm ${
-                  isMe
-                    ? "bg-[#7A1C16] text-[#FDFBF7] rounded-tr-none"
-                    : "bg-white border border-stone-100 text-stone-800 rounded-tl-none"
-                }`}>
-                  {/* Handling Simulated Voice Messages */}
-                  {msg.type === "voice" ? (
-                    <div className="space-y-2 min-w-[200px]">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isMe ? "bg-stone-900/10 text-[#FDFBF7]" : "bg-stone-100 text-[#7A1C16]"}`}>
-                          <Play className="w-4 h-4 fill-current" />
-                        </div>
-                        <div className="flex-1 h-8 flex items-center gap-1">
-                          {/* Simulated sound frequency bars */}
-                          {[8, 14, 20, 10, 16, 22, 12, 18, 6, 12, 16, 8].map((h, i) => (
-                            <div
-                              key={i}
-                              style={{ height: `${h}px` }}
-                              className={`w-0.5 rounded-full ${isMe ? "bg-[#FDFBF7]/80" : "bg-[#7A1C16]/80"}`}
-                            />
-                          ))}
-                        </div>
-                        <span className="font-mono text-xs text-stone-400 shrink-0">{msg.voiceDuration || "0:04"}</span>
-                      </div>
+          <section className={`${activeThread ? "flex" : "hidden md:flex"} min-h-[70vh] flex-col md:col-span-8`}>
+            {activeThread ? (
+              <>
+                <div className="flex items-center gap-3 border-b border-stone-200 px-4 py-3">
+                  <button onClick={() => setActiveThreadId(null)} className="rounded-full p-2 hover:bg-stone-100 md:hidden" aria-label="Back to threads">
+                    <ArrowLeft className="h-5 w-5" />
+                  </button>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-burgundy text-sm font-bold text-white">
+                    {(activeThread.title || activeThread.participantName || "C").slice(0, 1).toUpperCase()}
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold">{activeThread.title || activeThread.participantName || "Conversation"}</h2>
+                    <p className="text-[11px] text-stone-500">Text, voice notes, and transcription pipeline</p>
+                  </div>
+                </div>
 
-                      {/* Expandable Transcription Transcription */}
-                      <div className={`p-2.5 rounded-xl text-xs space-y-1 ${isMe ? "bg-stone-900/15" : "bg-stone-50"}`}>
-                        <div className="flex items-center gap-1 text-amber-600 font-mono text-[9px] uppercase tracking-wider font-bold">
-                          <Globe className="w-3.5 h-3.5" />
-                          <span>Gemini Voice Transcription ({activePartner?.language || "Duala"})</span>
-                        </div>
-                        <p className={`font-mono italic ${isMe ? "text-[#FDFBF7]/90" : "text-stone-700"}`}>
-                          “{msg.content}”
-                        </p>
-                        {msg.translation && (
-                          <p className={`pt-1 border-t ${isMe ? "text-[#FDFBF7]/70 border-[#FDFBF7]/10" : "text-stone-500 border-stone-200/50"} text-[11px]`}>
-                            <strong>Translation:</strong> {msg.translation}
-                          </p>
-                        )}
-                      </div>
+                <div className="flex-1 space-y-3 overflow-y-auto bg-[#FDFBF9] p-4 pb-28 md:pb-4">
+                  {currentMessages.length === 0 ? (
+                    <div className="flex h-full flex-col items-center justify-center text-center">
+                      <p className="text-sm font-bold text-stone-800">Start the conversation</p>
+                      <p className="mt-2 max-w-xs text-xs text-stone-500">
+                        Messages should persist through MongoDB collections for messages and threads.
+                      </p>
                     </div>
                   ) : (
-                    <p className="leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                    currentMessages.map((message) => {
+                      const isMine = message.senderId === currentUser.id;
+                      return (
+                        <div key={message.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                          <div className={`max-w-[82%] rounded-3xl px-4 py-3 text-sm shadow-sm ${
+                            isMine ? "rounded-tr-md bg-brand-burgundy text-white" : "rounded-tl-md border border-stone-100 bg-white text-stone-800"
+                          }`}>
+                            {message.type === "voice" ? (
+                              <div className="flex items-center gap-3">
+                                <button className={`flex h-9 w-9 items-center justify-center rounded-full ${isMine ? "bg-white/15" : "bg-stone-100"}`}>
+                                  <Play className="h-4 w-4 fill-current" />
+                                </button>
+                                <div>
+                                  <p className="font-bold">Voice note</p>
+                                  <p className={`text-[10px] ${isMine ? "text-white/65" : "text-stone-400"}`}>Transcription pending</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                            )}
+                            <span className={`mt-1 block text-right text-[9px] ${isMine ? "text-white/60" : "text-stone-400"}`}>
+                              {message.status || "sent"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
-                  <span className={`block text-[9px] font-mono mt-1 w-full text-right ${isMe ? "text-[#FDFBF7]/65" : "text-stone-400"}`}>
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                  <div ref={listEndRef} />
+                </div>
+
+                <form onSubmit={handleSubmit} className="fixed bottom-0 left-0 right-0 z-20 border-t border-stone-200 bg-white p-3 md:static md:z-auto">
+                  <div className="mx-auto flex max-w-6xl items-center gap-2">
+                    <button type="button" className="rounded-full p-3 text-stone-500 hover:bg-stone-100" aria-label="Attach file">
+                      <Paperclip className="h-5 w-5" />
+                    </button>
+                    <input
+                      value={inputText}
+                      onChange={(event) => setInputText(event.target.value)}
+                      placeholder="Type a message..."
+                      className="min-w-0 flex-1 rounded-full border border-stone-200 bg-[#FBF9F6] px-4 py-3 text-sm outline-none focus:border-brand-burgundy"
+                    />
+                    <button
+                      type="button"
+                      onClick={isRecording ? stopRecording : startRecording}
+                      className={`rounded-full p-3 text-white ${isRecording ? "bg-red-600" : "bg-stone-900"}`}
+                      aria-label={isRecording ? "Stop recording" : "Record voice note"}
+                    >
+                      {isRecording ? <Square className="h-5 w-5 fill-current" /> : <Mic className="h-5 w-5" />}
+                    </button>
+                    <button type="submit" disabled={!inputText.trim()} className="rounded-full bg-brand-burgundy p-3 text-white disabled:opacity-40" aria-label="Send message">
+                      <Send className="h-5 w-5" />
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <div className="hidden flex-1 items-center justify-center text-center md:flex">
+                <div>
+                  <h2 className="text-lg font-bold">Select a thread</h2>
+                  <p className="mt-2 text-sm text-stone-500">Your real conversations will appear after `/messages` is connected.</p>
                 </div>
               </div>
-            );
-          })}
-
-          {/* Typing simulation */}
-          {isTranscribing && (
-            <div className="flex justify-start">
-              <div className="bg-white border border-stone-100 rounded-2xl rounded-tl-none p-3.5 shadow-sm text-xs text-stone-400 flex items-center gap-2">
-                <div className="flex gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-bounce"></div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-bounce delay-100"></div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-bounce delay-200"></div>
-                </div>
-                <span>
-                  {isTranscribing === "partner-typing"
-                    ? `${activePartner?.name} is thinking...`
-                    : "Ngalá AI companion is transcribing..."}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div ref={listEndRef} />
+            )}
+          </section>
         </div>
-
-        {/* Preset voice note simulation box */}
-        <div className="px-4 py-2 bg-amber-50/50 border-t border-stone-100 flex gap-2 items-center overflow-x-auto">
-          <span className="text-[10px] font-mono text-stone-500 shrink-0 uppercase">Voice Presets:</span>
-          {CHAT_PRESETS.map((p, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSendVoicePreset(idx)}
-              disabled={isRecordingVoice}
-              className="text-[11px] bg-white hover:bg-stone-100 border border-stone-200 text-[#7A1C16] px-3 py-1.5 rounded-full shrink-0 flex items-center gap-1 cursor-pointer transition-all active:scale-95"
-              type="button"
-            >
-              <Mic className="w-3.5 h-3.5" />
-              <span>Send voice in {p.language}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Input Text Form */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!inputText.trim()) return;
-            handleSendMessage(inputText, "text");
-          }}
-          className="p-4 bg-white border-t border-stone-100 flex items-center gap-3"
-        >
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={activePartner?.id === "ngala-bot" ? "Ask a technology or cultural question..." : "Type your message..."}
-            className="flex-1 px-4 py-3 border border-stone-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#7A1C16] text-sm text-stone-900 bg-stone-50 placeholder:text-stone-400"
-          />
-          <button
-            type="submit"
-            disabled={!inputText.trim()}
-            className="p-3 rounded-2xl bg-[#7A1C16] text-white hover:bg-[#631410] disabled:opacity-50 transition-colors cursor-pointer"
-            title="Send text message"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
       </div>
     </div>
   );
