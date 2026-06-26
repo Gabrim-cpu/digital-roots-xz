@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, inMemoryPersistence, setPersistence } from 'firebase/auth';
+import { getAuth, browserLocalPersistence, setPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -14,5 +14,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const authPersistenceReady = setPersistence(auth, inMemoryPersistence);
+// Persist the session in the browser (localStorage) so it survives page
+// reloads and browser restarts. inMemoryPersistence would log the user out
+// on every refresh.
+export const authPersistenceReady = setPersistence(auth, browserLocalPersistence);
 export const db = getFirestore(app);

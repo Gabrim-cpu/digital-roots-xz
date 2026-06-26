@@ -15,18 +15,23 @@ export function AuthProvider({ children }) {
       setFirebaseUser(user);
 
       if (user) {
+        // Keep `loading` true while we resolve the backend appUser so route
+        // guards don't make redirect decisions on a half-loaded state (which
+        // would bounce a just-registered user past the profile form).
+        setLoading(true);
         try {
           const idToken = await user.getIdToken();
           const session = await syncSession(idToken, { picture: user.photoURL });
           setAppUser(session.user);
         } catch {
           setAppUser(null);
+        } finally {
+          setLoading(false);
         }
       } else {
         setAppUser(null);
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     return unsubscribe;
@@ -40,17 +45,40 @@ export function AuthProvider({ children }) {
     return session;
   }, []);
 
-  const signUp = useCallback(async ({ email, password, name, role, language, profilePicture }) => {
+  const signUp = useCallback(async ({ email, password, name, role, language, profilePicture, age, learnInterests, shareInterests }) => {
     const user = await registerUser({ email, password, name, role, language, profilePicture });
     const idToken = await user.getIdToken();
-    const session = await syncSession(idToken, { identity: role, language, picture: profilePicture || user.photoURL });
+    const session = await syncSession(idToken, {
+      identity: role,
+      language,
+      picture: profilePicture || user.photoURL,
+      age,
+      learn_interests: learnInterests,
+      share_interests: shareInterests,
+    });
     setAppUser(session.user);
     return session;
   }, []);
 
+
   const signOut = useCallback(async () => {
     await signOutUser();
     setAppUser(null);
+  }, []);
+
+  // Re-sync the current user's profile from the backend (name, avatar, points, etc.)
+  const refreshUser = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) return null;
+    try {
+      const idToken = await user.getIdToken();
+      const session = await syncSession(idToken, { picture: user.photoURL });
+      setAppUser(session.user);
+      return session.user;
+    } catch (err) {
+      console.error('Failed to refresh user:', err);
+      return null;
+    }
   }, []);
 
   const value = {
@@ -60,6 +88,8 @@ export function AuthProvider({ children }) {
     signIn,
     signUp,
     signOut,
+    logout: signOut,
+    refreshUser,
     isAuthenticated: !!firebaseUser,
   };
 
