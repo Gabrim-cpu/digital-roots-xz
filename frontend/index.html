@@ -3,13 +3,30 @@
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Digital Roots (XZ)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#740A03" />
+    <link rel="icon" href="/src/Assets/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/src/Assets/favicon.ico">
+    <title>Digital Roots</title>
+    <style>
+        html, body, #root {
+            height: 100%;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+        }
+    </style>
 </head>
 
 <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script src="https://upload-widget.cloudinary.com/latest/global/all.js" async></script>
 </body>
 
 </html>

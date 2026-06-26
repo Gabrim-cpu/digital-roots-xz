@@ -1,485 +1,470 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import React, { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Mic, Paperclip, Play, Send, Square, Users, Image, Volume2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
+import { useLanguage } from "../context/LanguageContext";
+import { getThreads, getMessages, sendMessage, uploadChatMedia } from "../services/apiService";
 
-import { useState, useRef, useEffect } from "react";
-import { User, Message } from "../types";
-import { Send, Mic, Play, Globe, MessageSquare, AlertCircle, Bot, User as UserIcon, Sparkles } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-interface ChatMessagingProps {
-  currentUser: User;
-  connectedUsers: User[];
-}
-
-const CHAT_PRESETS = [
-  {
-    language: "Duala",
-    original: "A begé lara wa mo ndedi. Onola mboti.",
-    meaning: "Please guide my hand carefully while setting up my mobile wallet.",
-  },
-  {
-    language: "Ewondo",
-    original: "Mebanga o lara ma eyidi internet.",
-    meaning: "I am trying to learn how to connect my camera on WhatsApp.",
-  }
-];
-
-export default function ChatMessaging({ currentUser, connectedUsers }: ChatMessagingProps) {
-  const [activePartner, setActivePartner] = useState<User | null>(connectedUsers[0] || null);
-  const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>({});
+export default function ChatMessaging({ currentUser }) {
+  const navigate = useNavigate();
+  const { t, language } = useLanguage();
+  const [threads, setThreads] = useState([]);
+  const [activeThreadId, setActiveThreadId] = useState(null);
   const [inputText, setInputText] = useState("");
-  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState<string | null>(null);
+  const [messages, setMessages] = useState([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [socketConnected, setSocketConnected] = useState(false);
 
-  const listEndRef = useRef<HTMLDivElement | null>(null);
+  const socketRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const recognitionRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const listEndRef = useRef(null);
 
-  // Initialize conversations with some welcome messages
+  const activeThread = threads.find((thread) => thread.id === activeThreadId) || null;
+
+  // 1. Initialize WebSocket socket.io client
   useEffect(() => {
-    const initialMap: Record<string, Message[]> = {};
-    connectedUsers.forEach((user) => {
-      if (user.role === "senior") {
-        initialMap[user.id] = [
-          {
-            id: `init-1-${user.id}`,
-            senderId: user.id,
-            receiverId: currentUser.id,
-            content: "Hello! Thank you for volunteering to help me learn how to use these smartphones. I would love to share some of my favorite oral folklore stories in return.",
-            type: "text",
-            timestamp: new Date(Date.now() - 3600000).toISOString(),
-          }
-        ];
-      } else {
-        initialMap[user.id] = [
-          {
-            id: `init-1-${user.id}`,
-            senderId: user.id,
-            receiverId: currentUser.id,
-            content: "Greetings, Elder! I am excited to connect. I can help with anything, from secure mobile money to internet safety, and I am very keen to learn your traditional wisdom.",
-            type: "text",
-            timestamp: new Date(Date.now() - 3600000).toISOString(),
-          }
-        ];
+    const socket = io(SOCKET_URL);
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      console.log("🔌 Connected to Chat WebSocket");
+      setSocketConnected(true);
+      if (currentUser?.id) {
+        socket.emit("join", currentUser.id);
       }
     });
 
-    // Add chatbot companion
-    initialMap["ngala-bot"] = [
-      {
-        id: "bot-init",
-        senderId: "ngala-bot",
-        receiverId: currentUser.id,
-        content: currentUser.role === "senior"
-          ? "Welcome! I am Ngalá, your AI Digital Helper. Introduce yourself or ask me questions like: 'How do I join a video call?' or 'What is a browser?' in natural simple words."
-          : "Salutations! I am Ngalá, your AI Cultural Sage. Ask me about Cameroonian dialects, the history of Ndolé, Ewondo proverbs, or Duala traditions.",
-        type: "text",
-        timestamp: new Date().toISOString(),
-      }
-    ];
+    socket.on("disconnect", () => {
+      setSocketConnected(false);
+    });
 
-    setMessagesMap(initialMap);
-  }, [connectedUsers, currentUser.id]);
+    // Listen to real-time incoming messages
+    socket.on("message", (msg) => {
+      // If message is for the currently open thread, add to message list
+      if (msg.senderId === activeThreadId || msg.receiverId === activeThreadId) {
+        setMessages((prev) => [...prev, msg]);
+      }
+      
+      // Refresh threads list to update last message preview
+      fetchThreads();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [currentUser, activeThreadId]);
+
+  // 2. Fetch all threads
+  const fetchThreads = async () => {
+    try {
+      const data = await getThreads();
+      if (data.success) {
+        setThreads(data.threads || []);
+      }
+    } catch (err) {
+      console.error("Error fetching threads:", err);
+    }
+  };
 
   useEffect(() => {
-    listEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messagesMap, activePartner]);
+    fetchThreads();
+  }, []);
 
-  const handleSendMessage = async (text: string, type: "text" | "voice" = "text", voiceMeta?: { duration: string; translation?: string }) => {
-    if (!activePartner) return;
-
-    const partnerId = activePartner.id;
-    const newMessage: Message = {
-      id: `msg-${Date.now()}`,
-      senderId: currentUser.id,
-      receiverId: partnerId,
-      content: text,
-      type,
-      timestamp: new Date().toISOString(),
-      ...(type === "voice"
-        ? {
-            voiceUrl: "mock_voice.mp3",
-            voiceDuration: voiceMeta?.duration || "0:04",
-            transcript: text,
-            translation: voiceMeta?.translation,
+  // 3. Fetch messages when active thread changes
+  useEffect(() => {
+    if (activeThreadId) {
+      const fetchMessagesList = async () => {
+        try {
+          const data = await getMessages(activeThreadId);
+          if (data.success) {
+            setMessages(data.messages || []);
           }
-        : {}),
-    };
+        } catch (err) {
+          console.error("Error fetching messages:", err);
+        }
+      };
+      fetchMessagesList();
+    } else {
+      setMessages([]);
+    }
+  }, [activeThreadId]);
 
-    setMessagesMap((prev) => ({
-      ...prev,
-      [partnerId]: [...(prev[partnerId] || []), newMessage],
-    }));
+  // 4. Scroll to bottom
+  useEffect(() => {
+    listEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length, activeThreadId]);
+
+  // 5. Submit text message
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const content = inputText.trim();
+    if (!content || !activeThreadId) return;
 
     setInputText("");
 
-    // Simulate AI response or buddy response
-    if (partnerId === "ngala-bot") {
-      simulateNgalabotResponse(text);
-    } else {
-      simulatePartnerResponse(partnerId, text);
+    try {
+      const data = await sendMessage(activeThreadId, content, "text");
+      if (data.success) {
+        setMessages((prev) => [...prev, data.message]);
+        fetchThreads();
+      }
+    } catch (err) {
+      console.error("Error sending text message:", err);
     }
   };
 
-  const simulatePartnerResponse = (partnerId: string, userText: string) => {
-    const partner = connectedUsers.find((u) => u.id === partnerId);
-    if (!partner) return;
+  // 6. Handle Image attachment
+  const handleImageChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeThreadId) return;
 
-    setIsTranscribing("partner-typing");
-
-    setTimeout(() => {
-      setIsTranscribing(null);
-      let replyContent = "That sounds fascinating! I look forward to discussing this more in our next live mentorship video session. Let's schedule one soon.";
-      
-      if (currentUser.role === "senior") {
-        if (userText.toLowerCase().includes("money") || userText.toLowerCase().includes("pay") || userText.toLowerCase().includes("cash")) {
-          replyContent = "I can definitely show you how to securely set up Mobile Money, Elder! Always remember to never share your 4-digit PIN with anyone, even agents.";
-        } else if (userText.toLowerCase().includes("whatsapp") || userText.toLowerCase().includes("call") || userText.toLowerCase().includes("video")) {
-          replyContent = "Excellent choice, Elder! Video calling on WhatsApp is easy. We will practice making calls during our scheduled session tomorrow.";
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onloadend = async () => {
+      try {
+        const base64Data = reader.result;
+        // Upload to Cloudinary (or local fallback)
+        const uploadResult = await uploadChatMedia(base64Data, "image");
+        if (uploadResult.success) {
+          // Send photo message
+          const data = await sendMessage(activeThreadId, t('imageSent'), "image", uploadResult.url);
+          if (data.success) {
+            setMessages((prev) => [...prev, data.message]);
+            fetchThreads();
+          }
         }
-      } else {
-        if (userText.toLowerCase().includes("folklore") || userText.toLowerCase().includes("story") || userText.toLowerCase().includes("recipe")) {
-          replyContent = "Thank you so much! That is exactly the heritage I want to preserve. Have you recorded it in the Audio story archive yet?";
-        }
+      } catch (err) {
+        console.error("Error uploading image:", err);
+      } finally {
+        setIsUploading(false);
       }
-
-      const partnerMessage: Message = {
-        id: `msg-${Date.now() + 1}`,
-        senderId: partnerId,
-        receiverId: currentUser.id,
-        content: replyContent,
-        type: "text",
-        timestamp: new Date().toISOString(),
-      };
-
-      setMessagesMap((prev) => ({
-        ...prev,
-        [partnerId]: [...(prev[partnerId] || []), partnerMessage],
-      }));
-    }, 2000);
+    };
   };
 
-  const simulateNgalabotResponse = async (userText: string) => {
-    setIsTranscribing("bot-typing");
+  // 7. Audio recording & live Speech-to-Text Transcription
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || !activeThreadId) return;
 
     try {
-      // Direct call to Gemini AI Proxy on server
-      const response = await fetch("/api/expert-advice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: userText,
-          userRole: currentUser.role,
-          primaryLanguage: currentUser.language,
-        }),
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordedChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
 
-      if (!response.ok) {
-        throw new Error("Bot proxy failed");
-      }
-
-      const data = await response.json();
-      
-      const botMessage: Message = {
-        id: `msg-${Date.now() + 1}`,
-        senderId: "ngala-bot",
-        receiverId: currentUser.id,
-        content: data.reply || "I am reflecting on your request. Let us connect generationally.",
-        type: "text",
-        timestamp: new Date().toISOString(),
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordedChunksRef.current.push(event.data);
       };
 
-      setMessagesMap((prev) => ({
-        ...prev,
-        "ngala-bot": [...(prev["ngala-bot"] || []), botMessage],
-      }));
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
+        
+        // Convert audio blob to Base64
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = async () => {
+          try {
+            setIsUploading(true);
+            const base64Data = reader.result;
+            // Upload audio to Cloudinary (or local fallback)
+            const uploadResult = await uploadChatMedia(base64Data, "video");
+            
+            if (uploadResult.success) {
+              // Save voice note with transcription
+              const finalTranscript = liveTranscript.trim() || t('voiceNote');
+              const data = await sendMessage(
+                activeThreadId,
+                finalTranscript,
+                "voice",
+                uploadResult.url,
+                finalTranscript
+              );
+
+              if (data.success) {
+                setMessages((prev) => [...prev, data.message]);
+                fetchThreads();
+              }
+            }
+          } catch (err) {
+            console.error("Error sending voice note:", err);
+          } finally {
+            setIsUploading(false);
+            setLiveTranscript("");
+          }
+        };
+      };
+
+      // Set up speech recognition
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = language === "fr" ? "fr-FR" : "en-US";
+
+        recognition.onresult = (event) => {
+          let currentText = "";
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              currentText += event.results[i][0].transcript;
+            }
+          }
+          if (currentText) {
+            setLiveTranscript((prev) => prev + " " + currentText);
+          }
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+      }
+
+      recorder.start();
+      setIsRecording(true);
     } catch (err) {
-      console.warn("Using localized fallback reply for ChatBot Companion.", err);
-      // Fallback
-      let fallbackReply = "Let's explore that topic! Together Gen X and Gen Z can solve anything.";
-      if (currentUser.role === "senior") {
-        fallbackReply = "To set up a video call, click the 'Mentorship Sessions' tab, look for Malik's invitation, and press 'Join Live video'. Very simple and secure!";
-      } else {
-        fallbackReply = "Cameroon features over 250 local languages. EWONDO and DUALA are major Bantu languages. Elders say: 'Wisdom is like a baobab tree; single arms cannot embrace it.'";
-      }
-
-      const botMessage: Message = {
-        id: `msg-${Date.now() + 1}`,
-        senderId: "ngala-bot",
-        receiverId: currentUser.id,
-        content: fallbackReply,
-        type: "text",
-        timestamp: new Date().toISOString(),
-      };
-
-      setMessagesMap((prev) => ({
-        ...prev,
-        "ngala-bot": [...(prev["ngala-bot"] || []), botMessage],
-      }));
-    } finally {
-      setIsTranscribing(null);
+      console.error("Microphone access denied or error:", err);
     }
   };
 
-  const handleSendVoicePreset = (presetIdx: number) => {
-    const preset = CHAT_PRESETS[presetIdx];
-    if (!preset) return;
-
-    setIsRecordingVoice(true);
-    setTimeout(() => {
-      setIsRecordingVoice(false);
-      handleSendMessage(preset.original, "voice", {
-        duration: "0:06",
-        translation: preset.meaning,
-      });
-    }, 1500);
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    recognitionRef.current?.stop();
+    setIsRecording(false);
   };
 
-  const currentMessages = activePartner ? messagesMap[activePartner.id] || [] : [];
-
   return (
-    <div id="chat-messaging-container" className="grid grid-cols-1 md:grid-cols-12 bg-white rounded-3xl border border-stone-100 shadow-sm overflow-hidden min-h-[500px]">
-      {/* Partners List Side Panel (Cols = 4) */}
-      <div className="md:col-span-4 border-r border-stone-100 p-4 bg-stone-50/50 flex flex-col justify-between">
-        <div>
-          <span className="text-[10px] font-mono tracking-widest text-[#7A1C16] font-bold uppercase mb-3 block">
-            Connections Messaging
-          </span>
+    <div className="min-h-screen bg-[#F8F7F4] md:p-6">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col bg-white md:min-h-[740px] md:rounded-[2rem] md:border md:border-stone-200 md:shadow-sm">
 
-          <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
-            {/* Real connections */}
-            {connectedUsers.map((user) => {
-              const isActive = activePartner?.id === user.id;
-              return (
-                <button
-                  key={user.id}
-                  onClick={() => setActivePartner(user)}
-                  className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-all text-left cursor-pointer ${
-                    isActive ? "bg-[#7A1C16] text-[#FDFBF7] shadow-sm" : "bg-white hover:bg-stone-100 text-stone-800 border border-stone-100"
-                  }`}
-                  style={{ gap: "12px" }}
-                  type="button"
-                >
-                  <img
-                    referrerPolicy="no-referrer"
-                    src={user.avatar}
-                    alt={user.name}
-                    className="w-10 h-10 rounded-full object-cover border border-white/20 shrink-0"
-                  />
-                  <div className="overflow-hidden">
-                    <h4 className="font-bold text-sm leading-tight truncate">{user.name}</h4>
-                    <span className={`text-[10px] font-mono leading-none ${isActive ? "text-amber-200" : "text-stone-400"}`}>
-                      {user.role === "senior" ? `Elder (${user.language})` : `Youth (Mentor)`}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-
-            {/* AI Assistant companion connection card */}
-            <button
-              onClick={() => setActivePartner({
-                id: "ngala-bot",
-                name: "Ngalá (AI Sage)",
-                email: "ngala@digitalroots.org",
-                age: 35,
-                role: "admin",
-                language: currentUser.language,
-                avatar: "bot_avatar",
-                points: 9999,
-                interests: ["African History", "Digital Literacy"]
-              })}
-              className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-all text-left cursor-pointer ${
-                activePartner?.id === "ngala-bot"
-                  ? "bg-[#7A1C16] text-white shadow-sm"
-                  : "bg-amber-50/70 hover:bg-amber-100 text-stone-800 border border-amber-100"
-              }`}
-              style={{ gap: "12px" }}
-              type="button"
-            >
-              <div className="w-10 h-10 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0">
-                <Bot className="w-5 h-5" />
-              </div>
-              <div className="overflow-hidden">
-                <h4 className="font-bold text-sm leading-tight flex items-center gap-1.5">
-                  Ngalá (AI Companion)
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse fill-amber-300" />
-                </h4>
-                <span className="text-[10px] font-mono leading-none text-stone-400">
-                  Dual Digital/Culture assistant
-                </span>
-              </div>
+        {/* Chat header */}
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-stone-200 bg-white/95 px-4 py-3 backdrop-blur md:rounded-t-[2rem]" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate("/dashboard")} className="rounded-full p-3 hover:bg-stone-100 min-h-[44px] min-w-[44px] flex items-center justify-center" aria-label="Back to dashboard">
+              <ArrowLeft className="h-6 w-6" />
             </button>
+            <div>
+              <h1 className="text-base font-bold text-stone-900">{t('chatTitle')}</h1>
+              <p className="text-[11px] text-stone-500">{t('chatSubtitle')}</p>
+            </div>
           </div>
-        </div>
+          <span className={`rounded-full px-3 py-1 text-[10px] font-bold ${socketConnected ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+            {socketConnected ? t('websocketReady') : "Connecting..."}
+          </span>
+        </header>
 
-        {/* Cameroon Anchor cultural reference card */}
-        <div className="bg-[#7A1C16]/5 border border-[#7A1C16]/10 p-4 rounded-2xl hidden md:block">
-          <h5 className="font-serif font-bold text-stone-800 text-xs mb-1 flex items-center gap-1.5">
-            <Globe className="w-4 h-4 text-[#7A1C16]" />
-            Pillar 3: Dual Native Tags
-          </h5>
-          <p className="text-[11px] text-stone-500 leading-relaxed">
-            Record voice notes in traditional tongues below to trigger auto phonetic translations using server-side Gemini.
-          </p>
-        </div>
-      </div>
+        <div className="grid flex-1 grid-cols-1 md:grid-cols-12 overflow-hidden">
+          
+          {/* Threads list sidebar */}
+          <aside className={`${activeThreadId ? "hidden md:flex" : "flex"} flex-col border-r border-stone-200 bg-[#FBF9F6] md:col-span-4`}>
+            <div className="border-b border-stone-200 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-burgundy">{t('threads')}</p>
+            </div>
 
-      {/* Main Conversational Messenger (Cols = 8) */}
-      <div className="md:col-span-8 flex flex-col justify-between h-[520px]">
-        {/* Active conversation header */}
-        <div className="p-4 border-b border-stone-100 bg-stone-50/20 flex items-center gap-3">
-          {activePartner && activePartner.id !== "ngala-bot" ? (
-            <>
-              <img
-                referrerPolicy="no-referrer"
-                src={activePartner.avatar}
-                alt={activePartner.name}
-                className="w-10 h-10 rounded-full object-cover border border-stone-200"
-              />
-              <div>
-                <h3 className="font-bold text-stone-900 text-sm">{activePartner.name}</h3>
-                <span className="text-xs text-stone-400">
-                  {activePartner.role === "senior"
-                    ? `Traditional knowledge keeper • Primary dialect: ${activePartner.language}`
-                    : `Sleek Digital Mentor`}
-                </span>
+            {threads.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-brand-burgundy">
+                  <Users className="h-6 w-6" />
+                </div>
+                <h2 className="mt-4 text-sm font-bold text-stone-900">{t('noConvYet')}</h2>
+                <p className="mt-2 max-w-xs text-xs leading-relaxed text-stone-500">
+                  {t('noConvYetSub')}
+                </p>
               </div>
-            </>
-          ) : (
-            <>
-              <div className="w-10 h-10 rounded-full bg-amber-500 text-white flex items-center justify-center">
-                <Bot className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-stone-900 text-sm">Ngalá AI Helper</h3>
-                <span className="text-xs text-stone-400">Dual Expert: Digital Smartphone navigation & West African Traditions</span>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Conversation Stream */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#FDFBF9]">
-          {currentMessages.map((msg, index) => {
-            const isMe = msg.senderId === currentUser.id;
-            return (
-              <div key={msg.id || index} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[75%] rounded-2xl p-3.5 shadow-sm text-sm ${
-                  isMe
-                    ? "bg-[#7A1C16] text-[#FDFBF7] rounded-tr-none"
-                    : "bg-white border border-stone-100 text-stone-800 rounded-tl-none"
-                }`}>
-                  {/* Handling Simulated Voice Messages */}
-                  {msg.type === "voice" ? (
-                    <div className="space-y-2 min-w-[200px]">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isMe ? "bg-stone-900/10 text-[#FDFBF7]" : "bg-stone-100 text-[#7A1C16]"}`}>
-                          <Play className="w-4 h-4 fill-current" />
-                        </div>
-                        <div className="flex-1 h-8 flex items-center gap-1">
-                          {/* Simulated sound frequency bars */}
-                          {[8, 14, 20, 10, 16, 22, 12, 18, 6, 12, 16, 8].map((h, i) => (
-                            <div
-                              key={i}
-                              style={{ height: `${h}px` }}
-                              className={`w-0.5 rounded-full ${isMe ? "bg-[#FDFBF7]/80" : "bg-[#7A1C16]/80"}`}
-                            />
-                          ))}
-                        </div>
-                        <span className="font-mono text-xs text-stone-400 shrink-0">{msg.voiceDuration || "0:04"}</span>
-                      </div>
-
-                      {/* Expandable Transcription Transcription */}
-                      <div className={`p-2.5 rounded-xl text-xs space-y-1 ${isMe ? "bg-stone-900/15" : "bg-stone-50"}`}>
-                        <div className="flex items-center gap-1 text-amber-600 font-mono text-[9px] uppercase tracking-wider font-bold">
-                          <Globe className="w-3.5 h-3.5" />
-                          <span>Gemini Voice Transcription ({activePartner?.language || "Duala"})</span>
-                        </div>
-                        <p className={`font-mono italic ${isMe ? "text-[#FDFBF7]/90" : "text-stone-700"}`}>
-                          “{msg.content}”
-                        </p>
-                        {msg.translation && (
-                          <p className={`pt-1 border-t ${isMe ? "text-[#FDFBF7]/70 border-[#FDFBF7]/10" : "text-stone-500 border-stone-200/50"} text-[11px]`}>
-                            <strong>Translation:</strong> {msg.translation}
-                          </p>
+            ) : (
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {threads.map((thread) => {
+                  const isActive = thread.id === activeThreadId;
+                  const initials = thread.participantName.slice(0, 1).toUpperCase();
+                  return (
+                    <button
+                      key={thread.id}
+                      onClick={() => setActiveThreadId(thread.id)}
+                      className={`w-full rounded-2xl p-3 text-left transition-all flex items-center gap-3 ${
+                        isActive ? "bg-brand-burgundy text-white shadow-md" : "hover:bg-white border border-transparent hover:border-stone-100"
+                      }`}
+                    >
+                      <div className={`h-10 w-10 shrink-0 overflow-hidden rounded-full bg-stone-200 flex items-center justify-center font-bold text-stone-700 text-sm ${isActive ? "bg-white/20 text-white" : ""}`}>
+                        {thread.participantAvatar ? (
+                          <img src={thread.participantAvatar} alt={thread.participantName} className="h-full w-full object-cover" />
+                        ) : (
+                          initials
                         )}
                       </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex justify-between items-baseline">
+                          <p className="text-sm font-bold truncate">{thread.participantName}</p>
+                          <span className={`text-[9px] ${isActive ? "text-white/60" : "text-stone-400"}`}>
+                            {thread.participantIdentity === 'Senior' ? t('senior') : t('youth')}
+                          </span>
+                        </div>
+                        <p className={`mt-1 truncate text-xs ${isActive ? "text-white/70" : "text-stone-500"}`}>
+                          {thread.lastMessage}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </aside>
+
+          {/* Active Chat Conversation page */}
+          <section className={`${activeThreadId ? "flex" : "hidden md:flex"} min-h-[70vh] flex-col md:col-span-8 bg-[#FDFBF9]`}>
+            {activeThread ? (
+              <>
+                <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3 bg-white">
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setActiveThreadId(null)} className="rounded-full p-2 hover:bg-stone-100 md:hidden" aria-label="Back to threads">
+                      <ArrowLeft className="h-5 w-5" />
+                    </button>
+                    <div className="h-10 w-10 overflow-hidden rounded-full bg-brand-burgundy text-sm font-bold text-white flex items-center justify-center">
+                      {activeThread.participantAvatar ? (
+                        <img src={activeThread.participantAvatar} alt={activeThread.participantName} className="h-full w-full object-cover" />
+                      ) : (
+                        activeThread.participantName.slice(0, 1).toUpperCase()
+                      )}
                     </div>
-                  ) : (
-                    <p className="leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                  )}
-                  <span className={`block text-[9px] font-mono mt-1 w-full text-right ${isMe ? "text-[#FDFBF7]/65" : "text-stone-400"}`}>
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                    <div>
+                      <h2 className="text-sm font-bold text-stone-900">{activeThread.participantName}</h2>
+                      <p className="text-[10px] text-stone-500">
+                        {activeThread.participantIdentity === 'Senior' ? t('senior') : t('youth')} • {activeThread.participantLanguage === 'fr' ? 'Français' : 'English'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Messages display */}
+                <div className="flex-1 space-y-4 overflow-y-auto p-4 pb-28 md:pb-4">
+                  {messages.map((message) => {
+                    const isMine = message.senderId === currentUser.id;
+                    return (
+                      <div key={message.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[75%] rounded-3xl px-4 py-3 text-sm shadow-sm ${
+                          isMine ? "rounded-tr-md bg-brand-burgundy text-white" : "rounded-tl-md border border-stone-100 bg-white text-stone-800"
+                        }`}>
+                          {message.type === "voice" ? (
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center gap-3">
+                                <audio src={message.mediaUrl} controls className="max-w-full h-10 accent-brand-burgundy" />
+                              </div>
+                              {message.transcription && (
+                                <p className={`text-xs italic leading-relaxed pt-1.5 border-t ${isMine ? "border-white/10 text-white/80" : "border-stone-100 text-stone-600"}`}>
+                                  "{message.transcription}"
+                                </p>
+                              )}
+                            </div>
+                          ) : message.type === "image" ? (
+                            <div className="space-y-1">
+                              <img src={message.mediaUrl} alt="Chat attachment" className="rounded-2xl max-w-full max-h-60 object-cover cursor-pointer hover:opacity-95" />
+                              {message.content && message.content !== t('imageSent') && (
+                                <p className="pt-1">{message.content}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                          )}
+                          <span className={`mt-1 block text-right text-[8px] uppercase tracking-wider ${isMine ? "text-white/60" : "text-stone-400"}`}>
+                            {t('sent')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={listEndRef} />
+                </div>
+
+                {/* Live recording preview bar */}
+                {isRecording && (
+                  <div className="bg-red-50 border-t border-red-100 px-6 py-3 flex items-center justify-between gap-4 animate-pulse">
+                    <div className="flex items-center gap-3 text-red-700">
+                      <Volume2 className="h-4 w-4 animate-bounce" />
+                      <span className="text-xs font-semibold">{t('recordVoice')}...</span>
+                    </div>
+                    {liveTranscript && (
+                      <p className="text-xs italic text-red-900 truncate max-w-md flex-1">
+                        "{liveTranscript}"
+                      </p>
+                    )}
+                    <button onClick={stopRecording} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-full font-bold">
+                      {t('stopRecording')}
+                    </button>
+                  </div>
+                )}
+
+                {/* Chat input controller */}
+                <form onSubmit={handleSubmit} className="fixed bottom-0 left-0 right-0 z-20 border-t border-stone-200 bg-white p-3 md:static md:z-auto" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+                  <div className="mx-auto flex max-w-6xl items-center gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden"
+                    />
+                    
+                    <button
+                      type="button"
+                      disabled={isUploading}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="rounded-full p-3 text-stone-500 hover:bg-stone-100 disabled:opacity-40 min-h-[48px] min-w-[48px] flex items-center justify-center"
+                      title={t('attachFile')}
+                    >
+                      <Paperclip className="h-6 w-6" />
+                    </button>
+
+                    <input
+                      value={inputText}
+                      onChange={(event) => setInputText(event.target.value)}
+                      placeholder={t('typeMessage')}
+                      disabled={isRecording || isUploading}
+                      className="min-w-0 flex-1 rounded-full border border-stone-200 bg-[#FBF9F6] px-4 py-3.5 text-base outline-none focus:border-brand-burgundy disabled:opacity-50 min-h-[48px]"
+                    />
+
+                    {!inputText.trim() && (
+                      <button
+                        type="button"
+                        onClick={isRecording ? stopRecording : startRecording}
+                        disabled={isUploading}
+                        className={`rounded-full p-3 text-white transition disabled:opacity-50 min-h-[48px] min-w-[48px] flex items-center justify-center ${isRecording ? "bg-red-600" : "bg-stone-900 hover:bg-stone-800"}`}
+                        title={isRecording ? t('stopRecording') : t('recordVoice')}
+                      >
+                        {isRecording ? <Square className="h-6 w-6 fill-current" /> : <Mic className="h-6 w-6" />}
+                      </button>
+                    )}
+
+                    {(inputText.trim() || isUploading) && (
+                      <button
+                        type="submit"
+                        disabled={!inputText.trim() || isUploading}
+                        className="rounded-full bg-brand-burgundy p-3 text-white disabled:opacity-40 hover:bg-opacity-95 min-h-[48px] min-w-[48px] flex items-center justify-center"
+                      >
+                        <Send className="h-6 w-6" />
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </>
+            ) : (
+              <div className="hidden flex-1 items-center justify-center text-center md:flex">
+                <div className="p-8">
+                  <div className="h-16 w-16 bg-[#FBF9F6] rounded-full flex items-center justify-center mx-auto text-brand-burgundy mb-4 border border-stone-100">
+                    <Users className="h-6 w-6" />
+                  </div>
+                  <h2 className="text-base font-bold text-stone-800">{t('selectThread')}</h2>
+                  <p className="mt-2 text-xs text-stone-500 max-w-xs mx-auto">{t('selectThreadSub')}</p>
                 </div>
               </div>
-            );
-          })}
-
-          {/* Typing simulation */}
-          {isTranscribing && (
-            <div className="flex justify-start">
-              <div className="bg-white border border-stone-100 rounded-2xl rounded-tl-none p-3.5 shadow-sm text-xs text-stone-400 flex items-center gap-2">
-                <div className="flex gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-bounce"></div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-bounce delay-100"></div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-bounce delay-200"></div>
-                </div>
-                <span>
-                  {isTranscribing === "partner-typing"
-                    ? `${activePartner?.name} is thinking...`
-                    : "Ngalá AI companion is transcribing..."}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div ref={listEndRef} />
+            )}
+          </section>
         </div>
 
-        {/* Preset voice note simulation box */}
-        <div className="px-4 py-2 bg-amber-50/50 border-t border-stone-100 flex gap-2 items-center overflow-x-auto">
-          <span className="text-[10px] font-mono text-stone-500 shrink-0 uppercase">Voice Presets:</span>
-          {CHAT_PRESETS.map((p, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSendVoicePreset(idx)}
-              disabled={isRecordingVoice}
-              className="text-[11px] bg-white hover:bg-stone-100 border border-stone-200 text-[#7A1C16] px-3 py-1.5 rounded-full shrink-0 flex items-center gap-1 cursor-pointer transition-all active:scale-95"
-              type="button"
-            >
-              <Mic className="w-3.5 h-3.5" />
-              <span>Send voice in {p.language}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Input Text Form */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!inputText.trim()) return;
-            handleSendMessage(inputText, "text");
-          }}
-          className="p-4 bg-white border-t border-stone-100 flex items-center gap-3"
-        >
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={activePartner?.id === "ngala-bot" ? "Ask a technology or cultural question..." : "Type your message..."}
-            className="flex-1 px-4 py-3 border border-stone-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#7A1C16] text-sm text-stone-900 bg-stone-50 placeholder:text-stone-400"
-          />
-          <button
-            type="submit"
-            disabled={!inputText.trim()}
-            className="p-3 rounded-2xl bg-[#7A1C16] text-white hover:bg-[#631410] disabled:opacity-50 transition-colors cursor-pointer"
-            title="Send text message"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
       </div>
     </div>
   );

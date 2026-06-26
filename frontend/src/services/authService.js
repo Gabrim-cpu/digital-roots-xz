@@ -4,21 +4,24 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
   GoogleAuthProvider,
+  updateProfile as updateFirebaseProfile,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../config/firebase';
+import { auth, authPersistenceReady, db } from '../config/firebase';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-export async function syncSession(idToken, { identity, language } = {}) {
+export async function syncSession(idToken, payload = {}) {
   const response = await fetch(`${API_URL}/api/auth/session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({ identity, language }),
+    body: JSON.stringify(payload),
   });
+
 
   const data = await response.json();
   if (!response.ok) {
@@ -28,9 +31,16 @@ export async function syncSession(idToken, { identity, language } = {}) {
   return data;
 }
 
-export async function registerUser({ email, password, name, role, language, interests = [] }) {
+export async function registerUser({ email, password, name, role, language, profilePicture, interests = [] }) {
+  await authPersistenceReady;
   const credential = await createUserWithEmailAndPassword(auth, email, password);
   const uid = credential.user.uid;
+  const photoURL = profilePicture || null;
+
+  await updateFirebaseProfile(credential.user, {
+    displayName: name,
+    ...(photoURL ? { photoURL } : {}),
+  });
 
   await setDoc(doc(db, 'users', uid), {
     uid,
@@ -38,6 +48,7 @@ export async function registerUser({ email, password, name, role, language, inte
     email,
     role,
     language: language || 'en',
+    avatar_url: photoURL,
     interests,
     createdAt: serverTimestamp(),
   });
@@ -46,12 +57,14 @@ export async function registerUser({ email, password, name, role, language, inte
 }
 
 export async function loginUser(email, password) {
+  await authPersistenceReady;
   const credential = await signInWithEmailAndPassword(auth, email, password);
   const snapshot = await getDoc(doc(db, 'users', credential.user.uid));
   return { user: credential.user, profile: snapshot.data() };
 }
 
 export async function signInWithGoogle() {
+  await authPersistenceReady;
   const provider = new GoogleAuthProvider();
   // Encourage account selection when multiple accounts are present
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -98,6 +111,10 @@ export async function signInWithGoogle() {
   return user;
 }
 
+export async function resetPassword(email) {
+  await sendPasswordResetEmail(auth, email);
+}
+
 export async function signOutUser() {
   await firebaseSignOut(auth);
 }
@@ -108,7 +125,7 @@ export async function getIdToken() {
   return user.getIdToken();
 }
 
-export async function updateProfile({ identity, language, display_name }) {
+export async function updateProfile(payload) {
   const idToken = await getIdToken();
   if (!idToken) throw new Error('Not authenticated');
 
@@ -118,7 +135,7 @@ export async function updateProfile({ identity, language, display_name }) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({ identity, language, display_name }),
+    body: JSON.stringify(payload),
   });
 
   const data = await response.json();
