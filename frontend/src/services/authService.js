@@ -5,21 +5,23 @@ import {
   signOut as firebaseSignOut,
   GoogleAuthProvider,
   updateProfile as updateFirebaseProfile,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, authPersistenceReady, db } from '../config/firebase';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-export async function syncSession(idToken, { identity, language, picture } = {}) {
+export async function syncSession(idToken, payload = {}) {
   const response = await fetch(`${API_URL}/api/auth/session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({ identity, language, picture }),
+    body: JSON.stringify(payload),
   });
+
 
   const data = await response.json();
   if (!response.ok) {
@@ -109,6 +111,10 @@ export async function signInWithGoogle() {
   return user;
 }
 
+export async function resetPassword(email) {
+  await sendPasswordResetEmail(auth, email);
+}
+
 export async function signOutUser() {
   await firebaseSignOut(auth);
 }
@@ -119,7 +125,7 @@ export async function getIdToken() {
   return user.getIdToken();
 }
 
-export async function updateProfile({ identity, language, display_name }) {
+export async function updateProfile(payload) {
   const idToken = await getIdToken();
   if (!idToken) throw new Error('Not authenticated');
 
@@ -129,7 +135,7 @@ export async function updateProfile({ identity, language, display_name }) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({ identity, language, display_name }),
+    body: JSON.stringify(payload),
   });
 
   const data = await response.json();

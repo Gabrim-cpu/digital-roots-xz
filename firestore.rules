@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Firestore security rules for XZ.
+//
+// IMPORTANT: The backend writes notifications with the Firebase Admin SDK, which
+// BYPASSES these rules entirely. So these rules only govern the CLIENT. They make
+// sure a signed-in user can read only their OWN notifications and can only flip
+// the `read` flag — they can't forge or delete notifications.
+//
+// If you already have rules deployed, MERGE the `notifications` match block into
+// your existing ruleset rather than replacing everything (you may have rules for
+// other collections this file doesn't know about).
+// ─────────────────────────────────────────────────────────────────────────────
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users collection (written client-side during registration / Google sign-in).
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Real-time notifications.
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null
+                  && resource.data.recipientUid == request.auth.uid;
+
+      // Client may only mark its own notifications read — nothing else.
+      allow update: if request.auth != null
+                    && resource.data.recipientUid == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+
+      // Creation/deletion happens server-side via the Admin SDK only.
+      allow create, delete: if false;
+    }
+  }
+}
